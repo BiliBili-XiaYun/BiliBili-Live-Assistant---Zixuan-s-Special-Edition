@@ -30,8 +30,8 @@ ICON_PATH = CURRENT_DIR / "resource" / "icon" / "app_icon.ico"
 # 需要包含的数据文件
 DATA_FILES = [
     ("resource/icon/*.ico", "resource/icon/"),
-    ("config.json", "."),
-    ("名单.csv", "."),
+    ("config.example.json", "."),  # 使用示例配置文件
+    ("名单.example.csv", "."),     # 使用示例名单文件
     ("qt.conf", "."),
 ]
 
@@ -147,12 +147,28 @@ def create_spec_file():
     """创建PyInstaller spec文件"""
     print("📝 创建 PyInstaller spec 文件...")
     
-    # 构建数据文件列表
-    datas_list = []
+    # 检查并构建存在的数据文件列表
+    valid_datas = []
     for src, dst in DATA_FILES:
-        datas_list.append(f"('{src}', '{dst}')")
+        # 处理通配符路径
+        if '*' in src:
+            from glob import glob
+            matching_files = glob(src)
+            if matching_files:
+                valid_datas.append(f"('{src}', '{dst}')")
+                print(f"   ✅ 找到数据文件: {src} ({len(matching_files)} 个文件)")
+            else:
+                print(f"   ⚠️ 跳过数据文件: {src} (未找到匹配文件)")
+        else:
+            # 处理单个文件
+            src_path = CURRENT_DIR / src
+            if src_path.exists():
+                valid_datas.append(f"('{src}', '{dst}')")
+                print(f"   ✅ 找到数据文件: {src}")
+            else:
+                print(f"   ⚠️ 跳过数据文件: {src} (文件不存在)")
     
-    datas_str = "[" + ",\n             ".join(datas_list) + "]"
+    datas_str = "[" + ",\n             ".join(valid_datas) + "]"
     
     # 构建隐式导入列表
     hiddenimports_str = "[" + ",\n                    ".join([f"'{pkg}'" for pkg in HIDDEN_IMPORTS]) + "]"
@@ -295,6 +311,8 @@ def post_build_setup():
     extra_files = [
         "更新日志.txt",
         "README.md",
+        "LICENSE",
+        "VERSION_MANAGEMENT.md",
     ]
     
     for file_name in extra_files:
@@ -307,11 +325,57 @@ def post_build_setup():
             except Exception as e:
                 print(f"   ⚠️ 复制失败: {file_name} - {e}")
     
+    # 获取GitHub仓库URL
+    try:
+        from version_info import GITHUB_REPO_URL
+        github_url = GITHUB_REPO_URL
+    except ImportError:
+        github_url = 'https://github.com/BiliBili-XiaYun/BiliBili-Live-Assistant---Zixuan-s-Special-Edition'
+    
+    # 创建配置文件使用说明
+    config_readme = output_dir / "配置说明.txt"
+    with open(config_readme, 'w', encoding='utf-8') as f:
+        f.write(f"""📝 {PROJECT_NAME} v{VERSION} 配置说明
+
+🚀 首次使用步骤：
+
+1. 配置文件设置
+   - 将 config.example.json 复制为 config.json
+   - 编辑 config.json 中的直播间ID和其他设置
+
+2. 名单文件设置  
+   - 将 名单.example.csv 复制为 名单.csv
+   - 在 名单.csv 中添加用户名单
+
+3. 启动程序
+   - 双击 {EXECUTABLE_NAME}.exe 或 启动.bat
+   - 首次运行可能需要登录B站账号
+
+📁 重要文件说明：
+   - config.json: 主要配置文件（需要手动创建）
+   - 名单.csv: 用户名单文件（需要手动创建）
+   - 更新日志.txt: 版本更新记录
+   - README.md: 详细使用说明
+
+⚠️ 注意事项：
+   - 请确保网络连接正常
+   - 首次使用需要配置B站登录信息
+   - 建议定期备份配置文件和名单文件
+
+🔗 更多帮助：
+   GitHub: {github_url}
+""")
+    print(f"   ✅ 创建配置说明: 配置说明.txt")
+    
     # 创建启动脚本（可选）
     startup_script = output_dir / "启动.bat"
-    with open(startup_script, 'w', encoding='gbk') as f:
+    with open(startup_script, 'w', encoding='utf-8') as f:
         f.write(f"""@echo off
+chcp 65001 >nul
 echo 正在启动 {PROJECT_NAME}...
+echo.
+echo 首次使用请先阅读"配置说明.txt"
+echo.
 "{EXECUTABLE_NAME}.exe"
 pause
 """)
