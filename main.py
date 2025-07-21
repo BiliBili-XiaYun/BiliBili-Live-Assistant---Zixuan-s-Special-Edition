@@ -36,18 +36,21 @@ def main():
         
         # 初始化日志系统
         from utils import get_main_logger
+        from version_info import get_version_string
         main_logger = get_main_logger()
-        main_logger.operation_start("应用程序启动", "子轩专属排队工具 v1.5")
+        main_logger.operation_start("应用程序启动", get_version_string())
         
         # 延迟导入PyQt6以提升启动速度
         from PyQt6.QtWidgets import QApplication
         
         # 创建QApplication实例
         app = QApplication(sys.argv)
-          # 设置应用程序信息
-        app.setApplicationName("子轩专属排队工具")
-        app.setApplicationVersion("1.5")
-        app.setOrganizationName("子轩专属排队工具")
+        
+        # 设置应用程序信息
+        from version_info import APP_NAME, APP_VERSION, ORGANIZATION_NAME
+        app.setApplicationName(APP_NAME)
+        app.setApplicationVersion(APP_VERSION)
+        app.setOrganizationName(ORGANIZATION_NAME)
         
         # 设置应用程序图标
         from config import Constants

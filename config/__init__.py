@@ -243,10 +243,24 @@ app_config = Config()
 
 # 常量定义
 class Constants:
-    """程序常量"""    # 应用程序信息
-    APP_NAME = "子轩专属排队工具"
-    APP_VERSION = "1.5"
-    APP_ORGANIZATION = "BilibiliDanmakuMonitor"
+    """程序常量"""
+    
+    # 应用程序信息 - 现在从 version_info.py 获取
+    # 保留这些常量是为了向后兼容，但推荐使用 version_info 模块
+    @property
+    def APP_NAME(self):
+        from version_info import APP_NAME
+        return APP_NAME
+    
+    @property 
+    def APP_VERSION(self):
+        from version_info import APP_VERSION
+        return APP_VERSION
+    
+    @property
+    def APP_ORGANIZATION(self):
+        from version_info import ORGANIZATION_NAME
+        return ORGANIZATION_NAME
     
     # 静态文件路径常量（不会变化的）
     COOKIES_FILE = "bilibili_cookies.json"

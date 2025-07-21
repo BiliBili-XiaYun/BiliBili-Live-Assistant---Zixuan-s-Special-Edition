@@ -11,11 +11,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-# 项目信息
-PROJECT_NAME = "子轩专属排队工具"
-EXECUTABLE_NAME = "子轩专属排队工具"
-VERSION = "1.5"
-AUTHOR = "BiliBili@夏韵XiaYun__"
+# 项目信息 - 从 version_info.py 获取
+from version_info import APP_NAME, APP_VERSION, APP_AUTHOR
+
+PROJECT_NAME = APP_NAME
+EXECUTABLE_NAME = APP_NAME  
+VERSION = APP_VERSION
+AUTHOR = APP_AUTHOR
 
 # 路径配置
 CURRENT_DIR = Path(__file__).parent.absolute()

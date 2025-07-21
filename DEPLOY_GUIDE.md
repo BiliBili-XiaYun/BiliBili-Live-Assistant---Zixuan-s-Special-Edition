@@ -74,8 +74,8 @@ git push -u origin main
 1. 在GitHub仓库页面点击 "Releases"
 2. 点击 "Create a new release"
 3. 填写版本信息：
-   - Tag version: `v1.0.0`
-   - Release title: `B站直播弹幕排队管理系统 v1.0.0`
+   - Tag version: `v1.7.0` (从 version_info.py 获取)
+   - Release title: `B站直播弹幕排队管理系统 v1.7.0`
    - 描述发布内容和功能
 4. 可以上传编译好的exe文件 (使用 `python build_exe.py` 构建)
 
