@@ -21,8 +21,9 @@ AUTHOR = APP_AUTHOR
 
 # 路径配置
 CURRENT_DIR = Path(__file__).parent.absolute()
-BUILD_DIR = CURRENT_DIR / "build"
-DIST_DIR = CURRENT_DIR / "dist"
+PACKAGE_ROOT_DIR = CURRENT_DIR.parent / "打包"  # 打包输出根目录
+BUILD_DIR = PACKAGE_ROOT_DIR / "build"
+DIST_DIR = PACKAGE_ROOT_DIR / "dist"
 MAIN_SCRIPT = CURRENT_DIR / "main.py"
 ICON_PATH = CURRENT_DIR / "resource" / "icon" / "app_icon.ico"
 
@@ -73,6 +74,11 @@ EXCLUDES = [
 def clean_build_dirs():
     """清理构建目录"""
     print("🧹 清理构建目录...")
+    
+    # 确保打包根目录存在
+    if not PACKAGE_ROOT_DIR.exists():
+        PACKAGE_ROOT_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"   ✅ 创建打包目录: {PACKAGE_ROOT_DIR}")
     
     # 清理旧的构建文件
     for dir_path in [BUILD_DIR, DIST_DIR]:
@@ -239,6 +245,8 @@ def run_pyinstaller(spec_file):
         "--clean",              # 清理临时文件
         "--noconfirm",          # 不询问确认
         "--log-level", "INFO",  # 设置日志级别
+        "--workpath", str(BUILD_DIR),  # 指定工作目录
+        "--distpath", str(DIST_DIR),   # 指定输出目录
         str(spec_file)
     ]
     
@@ -248,7 +256,7 @@ def run_pyinstaller(spec_file):
         # 使用系统默认编码，避免UTF-8解码错误
         result = subprocess.run(
             cmd, 
-            cwd=CURRENT_DIR, 
+            cwd=CURRENT_DIR,  # 在源代码目录执行
             capture_output=True, 
             text=True, 
             encoding='gbk',  # 使用GBK编码
