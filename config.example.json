@@ -1,0 +1,42 @@
+{
+  "window": {
+    "main_window_size": [800, 600],
+    "main_window_position": [100, 100],
+    "queue_window_size": [1000, 700],
+    "queue_window_position": [200, 200],
+    "login_dialog_size": [350, 250],
+    "login_dialog_position": [400, 300],
+    "name_list_editor_size": [600, 400],
+    "name_list_editor_position": [300, 250]
+  },
+  "danmaku": {
+    "room_id": 13355,
+    "auto_connect": false,
+    "reconnect_interval": 5
+  },
+  "queue": {
+    "queue_cost": 1,
+    "cutline_cost": 2,
+    "name_list_file": "名单.csv",
+    "auto_save_interval": 10
+  },
+  "gift_monitor": {
+    "enabled": true,
+    "guard_rewards": {
+      "舰长": 10,
+      "提督": 20,
+      "总督": 50
+    }
+  },
+  "notification": {
+    "enabled": true,
+    "show_queue_success": true,
+    "show_guard_purchase": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file_level": "DEBUG",
+    "max_file_size": 10485760,
+    "backup_count": 5
+  }
+}

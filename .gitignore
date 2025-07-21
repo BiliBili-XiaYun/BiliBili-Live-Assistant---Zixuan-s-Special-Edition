@@ -1,0 +1,68 @@
+# 个人信息相关文件
+bilibili_cookies.json
+*.log
+次数扣除日志.txt
+排队日志_*.txt
+count_changes.txt
+
+# 数据文件
+名单.csv
+*-新舰长.csv
+queue_state.json
+
+# 构建和分发目录
+build/
+dist/
+*.spec
+
+# 开发和优化脚本
+optimize_*.py
+cleanup_project.py
+final_log_optimization.py
+refactor_logs.py
+replace_logs.py
+test_*.py
+test_report.json
+*_REPORT.md
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# IDE 相关
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统相关
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 测试和临时文件
+test_*.py
+test_report.json
+temp/
+tmp/
+backup_logs/
+
+# 配置文件（包含个人设置）
+config.json
