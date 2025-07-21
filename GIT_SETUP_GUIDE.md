@@ -86,8 +86,8 @@ git commit -m "🎉 初始提交: B站直播弹幕排队管理系统
 - CSV 数据存储
 - 多线程异步处理"
 
-# 6. 添加远程仓库（将YOUR_USERNAME替换为您的GitHub用户名）
-git remote add origin https://github.com/YOUR_USERNAME/bilibili-danmaku-queue-system.git
+# 6. 添加远程仓库
+git remote add origin https://github.com/BiliBili-XiaYun/BiliBili-Live-Assistant---Zixuan-s-Special-Edition.git
 
 # 7. 设置主分支
 git branch -M main
