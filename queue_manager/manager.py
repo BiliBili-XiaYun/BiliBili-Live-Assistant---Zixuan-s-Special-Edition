@@ -292,17 +292,11 @@ class QueueManager:
             self.queue_logger.debug("用户已在插队队列", f"用户 {username} 已插队，忽略")
             return False
         
-        # 在名单中查找最小序号的匹配项，且有足够次数进行插队
-        matched_item = self._find_available_item(username)
+        # 检查用户是否有足够的合并次数进行插队
+        cutline_item = self._find_available_item_for_cutline(username)
         
-        if matched_item and matched_item.count >= Constants.CUTLINE_COST:
-            # 创建插队项目
-            cutline_item = QueueItem(
-                matched_item.name, 
-                Constants.CUTLINE_COST, 
-                matched_item.index, 
-                is_cutline=True
-            )
+        if cutline_item:
+            # 将创建的插队项目添加到插队队列
             cutline_item.in_queue = True
             self.cutline_list.append(cutline_item)
             self.user_cutline.add(username)
@@ -856,6 +850,67 @@ class QueueManager:
         
         return None
     
+    def _find_available_item_for_cutline(self, username: str) -> Optional[QueueItem]:
+        """
+        为插队功能查找可用的用户项目，采用合并次数检查方式
+        从倒数第一个开始检查，合并所有同名用户的次数
+        
+        Args:
+            username (str): 用户名
+            
+        Returns:
+            Optional[QueueItem]: 如果总次数足够插队，返回最晚上舰的可用项目；否则返回None
+        """
+        # 找到所有匹配用户名且未在队列中的项目
+        matched_items = []
+        for item in self.name_list:
+            if (item.name == username and 
+                item.count > 0 and 
+                not item.in_queue):
+                matched_items.append(item)
+        
+        if not matched_items:
+            return None
+        
+        # 按序号倒序排列（从最晚上舰的开始）
+        matched_items.sort(key=lambda x: x.index, reverse=True)
+        
+        # 计算总可用次数
+        total_count = sum(item.count for item in matched_items)
+        
+        # 检查总次数是否足够插队
+        if total_count < Constants.CUTLINE_COST:
+            return None
+        
+        # 从最晚上舰的项目开始，累计次数直到满足插队需求
+        accumulated_count = 0
+        selected_items = []
+        
+        for item in matched_items:
+            selected_items.append(item)
+            accumulated_count += item.count
+            
+            if accumulated_count >= Constants.CUTLINE_COST:
+                break
+        
+        # 使用最晚上舰的项目作为代表（序号最大的）
+        primary_item = selected_items[0]
+        
+        # 创建插队项目，使用最晚上舰项目的序号
+        cutline_item = QueueItem(
+            username,
+            Constants.CUTLINE_COST,
+            primary_item.index,
+            is_cutline=True
+        )
+        
+        self.queue_logger.debug("插队次数合并检查", 
+                               f"用户 {username} 总可用次数: {total_count}, "
+                               f"需要次数: {Constants.CUTLINE_COST}, "
+                               f"使用序号: {primary_item.index}")
+        
+        return cutline_item
+    
     def set_name_list_file(self, file_path: str):
         """
         设置名单文件路径，并保存到配置中
@@ -1130,7 +1185,7 @@ class QueueManager:
     
     def complete_cutline_item(self, username: str) -> bool:
         """
-        完成插队项目
+        完成插队项目 - 从倒数第一个开始扣除多个同名用户的次数
         
         Args:
             username (str): 用户名
@@ -1141,27 +1196,61 @@ class QueueManager:
         if username not in self.user_cutline:
             return False
         
-        # 在名单中查找用户并扣除次数
-        matched_item = self._find_user_in_name_list(username)
-        if matched_item:
-            old_count = matched_item.count
-            matched_item.count -= Constants.CUTLINE_COST  # 插队扣除2次
-            matched_item.in_queue = False  # 重置队列状态
+        # 找到所有匹配用户名且有可用次数的项目
+        matched_items = []
+        for item in self.name_list:
+            if item.name == username and item.count > 0:
+                matched_items.append(item)
+        
+        if not matched_items:
+            return False
+        
+        # 按序号倒序排列（从最晚上舰的开始扣除）
+        matched_items.sort(key=lambda x: x.index, reverse=True)
+        
+        # 计算需要扣除的总次数
+        remaining_cost = Constants.CUTLINE_COST
+        deducted_items = []  # 记录被扣除次数的项目
+        
+        # 从最晚上舰的项目开始扣除次数
+        for item in matched_items:
+            if remaining_cost <= 0:
+                break
+                
+            old_count = item.count
+            deduct_amount = min(item.count, remaining_cost)
+            item.count -= deduct_amount
+            item.in_queue = False  # 重置队列状态
+            remaining_cost -= deduct_amount
             
-            # 记录次数变化
-            self.log_count_change(matched_item.name, old_count, matched_item.count, "完成插队")
+            # 记录被扣除的项目信息
+            deducted_items.append({
+                'item': item,
+                'old_count': old_count,
+                'deducted': deduct_amount
+            })
             
-            # 立即保存名单
-            self.save_name_list_immediately()
-            
-            # 记录扣除日志
-            log_deduction(username, Constants.CUTLINE_COST, "完成插队")
+            self.queue_logger.debug("扣除插队次数", 
+                                   f"用户 {username} (序号: {item.index}) "
+                                   f"从 {old_count} 扣除 {deduct_amount} 次")
+        
+        # 记录所有次数变化
+        for record in deducted_items:
+            item = record['item']
+            old_count = record['old_count']
+            self.log_count_change(item.name, old_count, item.count, "完成插队")
+        
+        # 立即保存名单
+        self.save_name_list_immediately()
+        
+        # 记录扣除日志
+        log_deduction(username, Constants.CUTLINE_COST, "完成插队")
         
         # 从插队列表中移除
         self.cutline_list = [item for item in self.cutline_list if item.name != username]
         # 从已插队用户集合中移除
         self.user_cutline.remove(username)
-        self.queue_logger.info("完成插队", username)
+        self.queue_logger.info("完成插队", f"{username} (共扣除 {Constants.CUTLINE_COST} 次)")
         return True
     
     def delete_cutline_item(self, username: str) -> bool:
