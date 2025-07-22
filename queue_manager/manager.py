@@ -273,45 +273,7 @@ class QueueManager:
         self.cutline_started = False
         self.queue_logger.info("自动插队服务已停止")
     
-    def process_cutline_request(self, username: str) -> bool:
-        """
-        处理自动插队请求
-        
-        Args:
-            username (str): 用户名
-            
-        Returns:
-            bool: 是否成功插队
-        """
-        if not self.cutline_started:
-            return False
-        
-        if username in self.user_cutline:
-            self.queue_logger.debug("用户已在插队队列", f"用户 {username} 已插队，忽略")
-            return False
-        
-        # 在名单中查找最小序号的匹配项
-        matched_item = self._find_available_item(username)
-        
-        if matched_item and matched_item.count >= Constants.CUTLINE_COST:
-            # 创建插队项目
-            cutline_item = QueueItem(
-                matched_item.name, 
-                Constants.CUTLINE_COST, 
-                matched_item.index, 
-                is_cutline=True
-            )
-            cutline_item.in_queue = True
-            self.cutline_list.append(cutline_item)
-            self.user_cutline.add(username)
-            
-            # 按序号排序
-            self.cutline_list.sort(key=lambda x: x.index)
-            self.queue_logger.operation_complete("自动插队成功", f"{username} 已加入插队队列")
-            return True
-        else:
-            self.queue_logger.debug("用户不满足插队条件或无可用次数", f"用户 {username} 忽略插队")
-            return False
+
     
     def process_cutline_request(self, username: str) -> bool:
         """

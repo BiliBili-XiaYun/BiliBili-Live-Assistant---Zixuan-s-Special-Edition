@@ -130,6 +130,7 @@ class SimpleQueueManagerWindow(QMainWindow):
     def refresh_ui(self):
         """直接刷新UI界面"""
         self.update_queue_table()
+        self.update_cutline_table()
         self.update_boarding_table()
         self.update_button_states()
         self.update_status_bar()
@@ -169,6 +170,16 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.stop_boarding_btn.clicked.connect(self.stop_boarding)
         self.stop_boarding_btn.setEnabled(False)
         control_layout.addWidget(self.stop_boarding_btn)
+        
+        # 插队控制按钮
+        self.start_cutline_btn = QPushButton("开始插队")
+        self.start_cutline_btn.clicked.connect(self.start_cutline)
+        control_layout.addWidget(self.start_cutline_btn)
+        
+        self.stop_cutline_btn = QPushButton("停止插队")
+        self.stop_cutline_btn.clicked.connect(self.stop_cutline)
+        self.stop_cutline_btn.setEnabled(False)
+        control_layout.addWidget(self.stop_cutline_btn)
         
         # 队列操作按钮
         self.insert_queue_btn = QPushButton("插队")
@@ -221,21 +232,34 @@ class SimpleQueueManagerWindow(QMainWindow):
         tab_widget = QWidget()
         layout = QVBoxLayout()
         
-        # 创建水平分割器
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        # 创建主水平分割器
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # 排队队列区域
+        # 排队队列区域（左侧）
         queue_widget = self.create_queue_widget()
-        splitter.addWidget(queue_widget)
+        main_splitter.addWidget(queue_widget)
         
-        # 上车队列区域
+        # 创建右侧的垂直分割器（插队队列和上车队列）
+        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        
+        # 插队队列区域（右上）
+        cutline_widget = self.create_cutline_widget()
+        right_splitter.addWidget(cutline_widget)
+        
+        # 上车队列区域（右下）
         boarding_widget = self.create_boarding_widget()
-        splitter.addWidget(boarding_widget)
+        right_splitter.addWidget(boarding_widget)
         
-        # 设置分割器比例 (排队:上车 = 50:50)
-        splitter.setSizes([500, 500])
+        # 设置右侧分割器比例（插队:上车 = 50:50）
+        right_splitter.setSizes([300, 300])
         
-        layout.addWidget(splitter)
+        # 将右侧分割器添加到主分割器
+        main_splitter.addWidget(right_splitter)
+        
+        # 设置主分割器比例（排队:右侧 = 50:50）
+        main_splitter.setSizes([500, 500])
+        
+        layout.addWidget(main_splitter)
         tab_widget.setLayout(layout)
         return tab_widget
     
@@ -344,6 +368,33 @@ class SimpleQueueManagerWindow(QMainWindow):
         # 设置表格属性
         self.setup_table(self.queue_table)
         layout.addWidget(self.queue_table)
+        
+        widget.setLayout(layout)
+        return widget
+    
+    def create_cutline_widget(self) -> QWidget:
+        """创建插队队列组件"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        
+        # 标题区域
+        title_layout = QHBoxLayout()
+        title_label = QLabel("插队队列")
+        title_layout.addWidget(title_label)
+        
+        title_layout.addStretch()
+        # 插队统计
+        self.cutline_stats_label = QLabel("共 0 人在插队")
+        title_layout.addWidget(self.cutline_stats_label)
+        
+        layout.addLayout(title_layout)
+        # 表格
+        self.cutline_table = QTableWidget()
+        self.cutline_table.setColumnCount(4)
+        self.cutline_table.setHorizontalHeaderLabels(["序号", "名字", "完成", "取消"])
+        # 设置表格属性
+        self.setup_table(self.cutline_table)
+        layout.addWidget(self.cutline_table)
         
         widget.setLayout(layout)
         return widget
@@ -530,6 +581,18 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.queue_manager.stop_boarding()
         self.update_button_states()
         self.log_widget.log_system_event("停止上车服务")
+    
+    def start_cutline(self):
+        """开始插队"""
+        self.queue_manager.start_cutline()
+        self.update_button_states()
+        self.log_widget.log_system_event("开始插队服务")
+    
+    def stop_cutline(self):
+        """停止插队"""
+        self.queue_manager.stop_cutline()
+        self.update_button_states()
+        self.log_widget.log_system_event("停止插队服务")
     
     def show_insert_dialog(self):
         """显示插队对话框"""
@@ -887,6 +950,85 @@ class SimpleQueueManagerWindow(QMainWindow):
           # 更新统计
         self.boarding_stats_label.setText(f"共 {len(boarding_items)} 人已上车")
     
+    def update_cutline_table(self):
+        """更新插队队列表格"""
+        cutline_list = self.queue_manager.cutline_list
+        self.cutline_table.setRowCount(len(cutline_list))
+        
+        for row, item in enumerate(cutline_list):
+            # 序号列 - 插队显示为"插队"
+            index_item = QTableWidgetItem("插队")
+            index_item.setForeground(QColor("orange"))
+            font = QFont()
+            font.setBold(True)
+            index_item.setFont(font)
+            self.cutline_table.setItem(row, 0, index_item)
+            
+            # 名字列
+            name_item = QTableWidgetItem(item.name)
+            name_item.setForeground(QColor("orange"))
+            font = QFont()
+            font.setBold(True)
+            name_item.setFont(font)
+            self.cutline_table.setItem(row, 1, name_item)
+            
+            # 完成按钮
+            complete_btn = QPushButton("完成")
+            complete_btn.setProperty("table_row", row)
+            complete_btn.setProperty("table_type", "cutline")
+            complete_btn.setProperty("action_type", "complete")
+            complete_btn.clicked.connect(self.handle_table_button_click)
+            complete_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #d4edda;
+                    border: 1px solid #c3e6cb;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 12px;
+                    min-width: 50px;
+                    max-width: 70px;
+                    color: #155724;
+                }
+                QPushButton:hover {
+                    background-color: #c3e6cb;
+                    border-color: #b8dabc;
+                }
+                QPushButton:pressed {
+                    background-color: #b8dabc;
+                }
+            """)
+            self.cutline_table.setCellWidget(row, 2, complete_btn)
+            
+            # 取消按钮
+            cancel_btn = QPushButton("取消")
+            cancel_btn.setProperty("table_row", row)
+            cancel_btn.setProperty("table_type", "cutline")
+            cancel_btn.setProperty("action_type", "cancel")
+            cancel_btn.clicked.connect(self.handle_table_button_click)
+            cancel_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #f8d7da;
+                    border: 1px solid #f5c6cb;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-size: 12px;
+                    min-width: 50px;
+                    max-width: 70px;
+                    color: #721c24;
+                }
+                QPushButton:hover {
+                    background-color: #f5c6cb;
+                    border-color: #f1b0b7;
+                }
+                QPushButton:pressed {
+                    background-color: #f1b0b7;
+                }
+            """)
+            self.cutline_table.setCellWidget(row, 3, cancel_btn)
+        
+        # 更新统计
+        self.cutline_stats_label.setText(f"共 {len(cutline_list)} 人在插队")
+    
     def handle_table_button_click(self):
         """统一处理表格按钮点击"""
         sender = self.sender()
@@ -906,6 +1048,11 @@ class SimpleQueueManagerWindow(QMainWindow):
                     self.cancel_queue_item(row)
                 else:  # 默认为完成操作
                     self.complete_queue_item(row)
+            elif table_type == "cutline":
+                if action_type == "cancel":
+                    self.cancel_cutline_item(row)
+                else:  # 默认为完成操作
+                    self.complete_cutline_item(row)
             elif table_type == "boarding":
                 if action_type == "complete":
                     self.complete_boarding_item(row)
@@ -926,10 +1073,16 @@ class SimpleQueueManagerWindow(QMainWindow):
         is_boarding = self.queue_manager.boarding_started
         self.start_boarding_btn.setEnabled(not is_boarding)
         self.stop_boarding_btn.setEnabled(is_boarding)
+        
+        # 更新插队按钮状态
+        is_cutline = self.queue_manager.cutline_started
+        self.start_cutline_btn.setEnabled(not is_cutline)
+        self.stop_cutline_btn.setEnabled(is_cutline)
           # 更新状态栏
         status_text = "运行中" if is_running else "已停止"
         boarding_text = "运行中" if is_boarding else "已停止"
-        self.queue_status_label.setText(f"排队: {status_text} | 上车: {boarding_text}")
+        cutline_text = "运行中" if is_cutline else "已停止"
+        self.queue_status_label.setText(f"排队: {status_text} | 插队: {cutline_text} | 上车: {boarding_text}")
     
     def update_status(self, message: str):
         """更新状态显示"""
@@ -985,6 +1138,24 @@ class SimpleQueueManagerWindow(QMainWindow):
                     self.log_widget.log_system_event(f"{removed_item.name} 已从上车队列删除（未扣除次数）")
         except Exception as e:
             gui_logger.error("移除上车项目时出错", str(e))
+    
+    def complete_cutline_item(self, index: int):
+        """完成插队项目"""
+        if 0 <= index < len(self.queue_manager.cutline_list):
+            item = self.queue_manager.cutline_list[index]
+            success = self.queue_manager.complete_cutline_item(item.name)
+            if success:
+                self.refresh_ui()  # 直接刷新UI
+                self.log_widget.log_queue_complete(item.name, "插队队列")
+    
+    def cancel_cutline_item(self, index: int):
+        """取消插队项目（不扣除次数）"""
+        if 0 <= index < len(self.queue_manager.cutline_list):
+            item = self.queue_manager.cutline_list[index]
+            success = self.queue_manager.delete_cutline_item(item.name)
+            if success:
+                self.refresh_ui()  # 直接刷新UI
+                self.log_widget.log_system_event(f"{item.name} 取消插队（未扣除次数）")
     
     def complete_boarding_item(self, row: int):
         """完成上车项目（扣除次数）"""
@@ -1094,6 +1265,36 @@ class SimpleQueueManagerWindow(QMainWindow):
                     self.log_widget.log_queue_failed(username, "上车服务未开启")
                 elif username in self.queue_manager.user_boarded:
                     self.log_widget.log_queue_failed(username, "已上车")
+                else:
+                    self.log_widget.log_queue_failed(username, "名单中找不到或次数不足")
+                
+        except Exception as e:
+            self.log_widget.log_queue_failed(username, f"系统错误: {str(e)}")
+    
+    def process_danmaku_cutline(self, username: str):
+        """
+        处理弹幕插队请求
+        
+        Args:
+            username (str): 用户名
+        """
+        try:
+            # 调用队列管理器的插队处理函数
+            success = self.queue_manager.process_cutline_request(username)
+            
+            if success:
+                # 直接刷新UI
+                self.refresh_ui()
+                
+                # 记录成功日志 - 插队消耗指定次数
+                from config import Constants
+                self.log_widget.log_queue_success(username, "弹幕插队", Constants.CUTLINE_COST)
+            else:
+                # 可能的失败原因：插队服务未开启、用户已在插队队列中、名单中找不到或次数不足
+                if not self.queue_manager.cutline_started:
+                    self.log_widget.log_queue_failed(username, "插队服务未开启")
+                elif username in self.queue_manager.user_cutline:
+                    self.log_widget.log_queue_failed(username, "已在插队队列")
                 else:
                     self.log_widget.log_queue_failed(username, "名单中找不到或次数不足")
                 
