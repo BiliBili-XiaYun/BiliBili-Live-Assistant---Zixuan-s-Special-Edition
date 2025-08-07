@@ -69,7 +69,9 @@ class BilibiliDanmakuMonitor(QMainWindow):
     
     def init_ui(self):
         """初始化用户界面"""
-        self.setWindowTitle(f"{Constants.APP_NAME} (bilibili-api)")
+        # 直接从 version_info 导入应用名称，避免使用 property
+        from version_info import APP_NAME
+        self.setWindowTitle(f"{APP_NAME} (bilibili-api)")
         self.setGeometry(100, 100, *Constants.MAIN_WINDOW_SIZE)
         
         # 设置窗口图标
