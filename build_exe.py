@@ -33,10 +33,8 @@ ICON_PATH = CURRENT_DIR / "resource" / "icon" / "app_icon.ico"
 # 需要包含的数据文件
 DATA_FILES = [
     ("resource/icon/*.ico", "resource/icon/"),
-    ("config.example.json", "."),  # 使用示例配置文件
     ("config.json", "."),          # 包含当前配置文件
-    ("名单.example.csv", "."),     # 使用示例名单文件
-    ("名单.csv", "."),             # 包含当前名单文件（如果存在）
+    ("更新日志.txt", "."),          # 包含更新日志
     ("qt.conf", "."),
 ]
 
@@ -511,9 +509,7 @@ def post_build_setup():
     # 复制额外的配置文件
     extra_files = [
         "更新日志.txt",
-        "README.md",
         "LICENSE",
-        "VERSION_MANAGEMENT.md",
     ]
     
     for file_name in extra_files:
@@ -543,12 +539,10 @@ def post_build_setup():
 1. 配置文件设置
    - 已包含当前 config.json 配置文件
    - 可根据需要编辑 config.json 中的直播间ID和其他设置
-   - config.example.json 作为配置参考文件
 
 2. 名单文件设置  
-   - 已包含当前 名单.csv 文件（如果存在）
-   - 可直接使用现有名单或根据需要修改
-   - 名单.example.csv 作为名单格式参考
+   - 需要创建 名单.csv 文件，或使用程序内的名单编辑功能
+   - 名单格式：用户名(次数)，例如：张三(100)
 
 3. 启动程序
    - 双击 {EXECUTABLE_NAME}.exe 或 启动.bat
@@ -556,17 +550,14 @@ def post_build_setup():
 
 📁 重要文件说明：
    - config.json: 主要配置文件（已包含，可直接使用）
-   - config.example.json: 配置参考文件
-   - 名单.csv: 用户名单文件（已包含，可直接使用）
-   - 名单.example.csv: 名单格式参考文件
    - 更新日志.txt: 版本更新记录
-   - README.md: 详细使用说明
+   - 名单.csv: 用户名单文件（需要自行创建或使用程序内编辑功能）
 
 ⚠️ 注意事项：
    - 请确保网络连接正常
    - 首次使用需要配置B站登录信息
    - 建议定期备份配置文件和名单文件
-   - 配置文件和名单已预配置，可直接使用或根据需要修改
+   - 如需名单文件，可在程序中使用名单编辑功能创建
 
 🔗 更多帮助：
    GitHub: {github_url}
