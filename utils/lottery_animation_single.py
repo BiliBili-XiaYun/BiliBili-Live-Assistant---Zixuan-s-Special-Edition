@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-抽奖动画模块 - 处理随机选择动画逻辑
+单人抽奖动画模块 - 处理单人随机选择动画逻辑
 """
 
 import random
@@ -12,8 +12,8 @@ from collections import deque
 
 from models import QueueItem
 
-class RandomSelectionAnimationThread(QThread):
-    """随机选择动画线程"""
+class SingleRandomSelectionAnimationThread(QThread):
+    """单人随机选择动画线程"""
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -27,7 +27,7 @@ class RandomSelectionAnimationThread(QThread):
     
     def __init__(self, queue_list: List[QueueItem], recent_winners=None):
         """
-        初始化抽奖动画线程
+        初始化单人抽奖动画线程
         
         Args:
             queue_list: 排队列表
@@ -49,7 +49,7 @@ class RandomSelectionAnimationThread(QThread):
         self.recent_winners = recent_winners if recent_winners is not None else []
     
     def run(self):
-        """执行抽奖动画"""
+        """执行单人抽奖动画"""
         try:
             start_time = time.time()
             
@@ -65,16 +65,17 @@ class RandomSelectionAnimationThread(QThread):
                     available_indices = list(range(len(self.queue_list)))
                 
                 # 随机选择一个用户
-                selected_indices = random.sample(available_indices, min(1, len(available_indices)))
-                selected_names = [self.queue_list[i].name for i in selected_indices]
+                if available_indices:
+                    selected_index = random.choice(available_indices)
+                    selected_name = self.queue_list[selected_index].name
+                else:
+                    selected_name = ""
 
                 # 随机选择滚动字符
                 scroll_char = random.choice(self.scroll_chars)
 
-                # 发送更新信号
-                user1_name = selected_names[0] if len(selected_names) > 0 else ""
-                user2_name = ""  # 只选择一人，第二个为空
-                self.update_display.emit(user1_name, user2_name, scroll_char)
+                # 发送更新信号（只发送一个用户，第二个用户为空）
+                self.update_display.emit(selected_name, "", scroll_char)
 
                 # 计算延迟时间（随着时间增长，速度减慢）
                 delay = self.initial_delay + (self.final_delay - self.initial_delay) * progress
@@ -91,9 +92,14 @@ class RandomSelectionAnimationThread(QThread):
                     if len(available_indices) < 1:
                         available_indices = list(range(len(self.queue_list)))
 
-                # 选择最终中奖者
-                final_indices = random.sample(available_indices, min(1, len(available_indices)))
-                final_names = [self.queue_list[i].name for i in final_indices]
+                # 选择最终中奖者（只选择1个）
+                if available_indices:
+                    final_index = random.choice(available_indices)
+                    final_indices = [final_index]
+                    final_names = [self.queue_list[final_index].name]
+                else:
+                    final_indices = []
+                    final_names = []
 
                 # 动画线程不再维护中奖队列，由主逻辑统一管理
 
@@ -101,7 +107,7 @@ class RandomSelectionAnimationThread(QThread):
                 self.animation_finished.emit(final_indices, final_names)
 
         except Exception as e:
-            self.queue_logger.error("抽奖动画线程错误", str(e), exc_info=True)
+            self.queue_logger.error("单人抽奖动画线程错误", str(e), exc_info=True)
 
     def stop(self):
         """停止动画"""

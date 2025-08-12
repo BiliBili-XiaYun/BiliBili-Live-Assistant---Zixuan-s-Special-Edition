@@ -61,6 +61,10 @@ class QueueManager:
         self.queue_started = False                  # 排队是否开始
         self.boarding_started = False               # 上车是否开始
         self.cutline_started = False                # 插队是否开始
+        
+        # 插队名单设置 - 为排队工具2新增
+        self.cutline_custom_namelist: Optional[str] = None  # 自定义插队名单文件路径
+        self.cutline_use_custom_namelist: bool = False      # 是否使用自定义插队名单
           # 配置文件监听
         self._config_mtime = app_config.get_file_modification_time()
         self._config_timer = QTimer()
@@ -287,16 +291,6 @@ class QueueManager:
         """停止上车"""
         self.boarding_started = False
         self.queue_logger.info("上车服务已停止")
-    
-    def start_cutline(self) -> None:
-        """开始插队"""
-        self.cutline_started = True
-        self.queue_logger.info("插队服务已开始")
-    
-    def stop_cutline(self) -> None:
-        """停止插队"""
-        self.cutline_started = False
-        self.queue_logger.info("插队服务已停止")
     
     def start_cutline(self) -> None:
         """开始自动插队"""
@@ -897,9 +891,12 @@ class QueueManager:
         Returns:
             Optional[QueueItem]: 如果总次数足够插队，返回最晚上舰的可用项目；否则返回None
         """
+        # 获取插队使用的名单
+        cutline_namelist = self.get_cutline_namelist()
+        
         # 找到所有匹配用户名且未在队列中的项目
         matched_items = []
-        for item in self.name_list:
+        for item in cutline_namelist:
             if (item.name == username and 
                 item.count > 0 and 
                 not item.in_queue):
@@ -978,6 +975,44 @@ class QueueManager:
             str: 当前名单文件路径
         """
         return self.name_list_file
+    
+    def set_cutline_namelist(self, custom_file_path: Optional[str] = None, use_custom: bool = False):
+        """
+        设置插队名单
+        
+        Args:
+            custom_file_path (Optional[str]): 自定义名单文件路径，为None时使用排队名单
+            use_custom (bool): 是否使用自定义名单
+        """
+        self.cutline_custom_namelist = custom_file_path
+        self.cutline_use_custom_namelist = use_custom
+        
+        if use_custom and custom_file_path:
+            self.queue_logger.info("设置插队自定义名单", custom_file_path)
+        else:
+            self.queue_logger.info("设置插队名单", "使用排队队列名单")
+    
+    def get_cutline_namelist(self) -> List[QueueItem]:
+        """
+        获取插队使用的名单
+        
+        Returns:
+            List[QueueItem]: 插队名单列表
+        """
+        if self.cutline_use_custom_namelist and self.cutline_custom_namelist:
+            # 使用自定义名单
+            try:
+                if os.path.exists(self.cutline_custom_namelist):
+                    custom_list = load_name_list_from_csv(self.cutline_custom_namelist)
+                    self.queue_logger.debug("加载插队自定义名单", f"共 {len(custom_list)} 个项目")
+                    return custom_list
+                else:
+                    self.queue_logger.warning("插队自定义名单文件不存在，使用排队名单", self.cutline_custom_namelist)
+            except Exception as e:
+                self.queue_logger.error("加载插队自定义名单失败，使用排队名单", str(e))
+        
+        # 使用排队名单（默认）
+        return self.name_list
     
     def reload_name_list_file_from_config(self):
         """

@@ -844,7 +844,6 @@ class AddEditItemDialog(QDialog):
     def __init__(self, parent=None, name: str = "", count: int = 1):
         """
         初始化对话框
-        
         Args:
             parent: 父窗口
             name: 初始名字

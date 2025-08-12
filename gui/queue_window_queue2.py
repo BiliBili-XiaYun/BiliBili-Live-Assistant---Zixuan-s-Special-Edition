@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-简洁版排队管理窗口模块 - 移除所有样式，使用默认UI
+排队工具2专用排队管理窗口模块 - 去除上车相关功能
 """
 
 import os
@@ -25,7 +25,7 @@ except ImportError:
 
 
 from models import QueueItem
-from queue_manager import QueueManager
+from queue_manager.manager_queue2 import QueueManager
 from gui.insert_queue_dialog import InsertQueueDialog
 from gui.manual_add_queue_dialog import ManualAddQueueDialog
 from gui.log_widget_simple import LogDisplayWidget
@@ -33,7 +33,7 @@ from config import Constants
 from utils import RandomSelectionAnimationThread, show_copy_notification, gui_logger
 
 
-class SimpleQueueManagerWindow(QMainWindow):
+class Queue2ManagerWindow(QMainWindow):
     """默认样式"""
       # 信号定义
     danmaku_queue_signal = pyqtSignal(str)  # 排队弹幕信号
@@ -45,7 +45,7 @@ class SimpleQueueManagerWindow(QMainWindow):
             queue_manager: 外部队列管理器实例，如果为None则创建新实例
         """
         super().__init__(parent)
-        self.setWindowTitle("子轩专属排队管理系统")
+        self.setWindowTitle("子轩专属排队管理系统 - 排队工具2")
         self.setGeometry(200, 200, 1200, 800)
         
         # 设置窗口属性，确保在任务栏中独立显示
@@ -199,6 +199,10 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.final_highlighted_rows = []  # 新增：记录最终高亮的行
         self.is_animating = False  # 新增：动画状态标志
         
+        # 插队名单设置 - 默认为None表示使用排队队列名单
+        self.cutline_custom_namelist = None
+        self.cutline_use_custom_namelist = False
+        
         # 初始化UI
         self.init_ui()
         
@@ -248,7 +252,6 @@ class SimpleQueueManagerWindow(QMainWindow):
         """直接刷新UI界面"""
         self.update_queue_table()
         self.update_cutline_table()
-        self.update_boarding_table()
         self.update_button_states()
         self.update_status_bar()
         
@@ -278,16 +281,6 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.stop_queue_btn.setEnabled(False)
         control_layout.addWidget(self.stop_queue_btn)
         
-        # 上车功能按钮
-        self.start_boarding_btn = QPushButton("开始上车")
-        self.start_boarding_btn.clicked.connect(self.start_boarding)
-        control_layout.addWidget(self.start_boarding_btn)
-        
-        self.stop_boarding_btn = QPushButton("停止上车")
-        self.stop_boarding_btn.clicked.connect(self.stop_boarding)
-        self.stop_boarding_btn.setEnabled(False)
-        control_layout.addWidget(self.stop_boarding_btn)
-        
         # 插队控制按钮
         self.start_cutline_btn = QPushButton("开始插队")
         self.start_cutline_btn.clicked.connect(self.start_cutline)
@@ -297,6 +290,11 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.stop_cutline_btn.clicked.connect(self.stop_cutline)
         self.stop_cutline_btn.setEnabled(False)
         control_layout.addWidget(self.stop_cutline_btn)
+        
+        # 插队名单设置按钮
+        self.cutline_namelist_btn = QPushButton("插队名单设置")
+        self.cutline_namelist_btn.clicked.connect(self.show_cutline_namelist_dialog)
+        control_layout.addWidget(self.cutline_namelist_btn)
         
         # 重新排队按钮
         self.requeue_btn = QPushButton("重新排队")
@@ -348,25 +346,12 @@ class SimpleQueueManagerWindow(QMainWindow):
         queue_widget = self.create_queue_widget()
         main_splitter.addWidget(queue_widget)
         
-        # 创建右侧的垂直分割器（插队队列和上车队列）
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # 插队队列区域（右上）
+        # 插队队列区域（右侧）
         cutline_widget = self.create_cutline_widget()
-        right_splitter.addWidget(cutline_widget)
+        main_splitter.addWidget(cutline_widget)
         
-        # 上车队列区域（右下）
-        boarding_widget = self.create_boarding_widget()
-        right_splitter.addWidget(boarding_widget)
-        
-        # 设置右侧分割器比例（插队:上车 = 50:50）
-        right_splitter.setSizes([300, 300])
-        
-        # 将右侧分割器添加到主分割器
-        main_splitter.addWidget(right_splitter)
-        
-        # 设置主分割器比例（排队:右侧 = 50:50）
-        main_splitter.setSizes([500, 500])
+        # 设置主分割器比例（排队:插队 = 60:40）
+        main_splitter.setSizes([600, 400])
         
         layout.addWidget(main_splitter)
         tab_widget.setLayout(layout)
@@ -393,48 +378,28 @@ class SimpleQueueManagerWindow(QMainWindow):
         title_label = QLabel("排队队列")
         title_layout.addWidget(title_label)
         
-        # 抽奖显示区域 - 简化为水平布局
+        # 抽奖显示区域 - 单人抽奖布局
         lottery_layout = QHBoxLayout()
         
-        # 1号框抽奖结果显示
-        self.lottery_display_user1 = QLabel("1号框 - 等待抽奖")
+        # 抽奖结果显示（只显示一个框）
+        self.lottery_display_user1 = QLabel("等待抽奖")
         self.lottery_display_user1.setStyleSheet("""
             QLabel {
                 background-color: #f8f9fa;
                 border: 2px solid #dee2e6;
                 border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
+                padding: 8px 15px;
+                font-size: 14px;
                 font-weight: normal;
                 color: #495057;
-                min-width: 100px;
-                max-width: 120px;
-                min-height: 28px;
+                min-width: 200px;
+                max-width: 300px;
+                min-height: 35px;
             }
         """)
         self.lottery_display_user1.setWordWrap(True)
         self.lottery_display_user1.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lottery_layout.addWidget(self.lottery_display_user1)
-        
-        # 2号框抽奖结果显示
-        self.lottery_display_user2 = QLabel("2号框 - 等待抽奖")
-        self.lottery_display_user2.setStyleSheet("""
-            QLabel {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
-                font-weight: normal;
-                color: #495057;
-                min-width: 100px;
-                max-width: 120px;
-                min-height: 28px;
-            }
-        """)
-        self.lottery_display_user2.setWordWrap(True)
-        self.lottery_display_user2.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lottery_layout.addWidget(self.lottery_display_user2)
 
         # 随机按钮
         self.random_select_btn = QPushButton("随机")
@@ -504,33 +469,6 @@ class SimpleQueueManagerWindow(QMainWindow):
         # 设置表格属性
         self.setup_table(self.cutline_table)
         layout.addWidget(self.cutline_table)
-        
-        widget.setLayout(layout)
-        return widget
-    
-    def create_boarding_widget(self) -> QWidget:
-        """创建上车队列组件"""
-        widget = QWidget()
-        layout = QVBoxLayout()
-        
-        # 标题区域
-        title_layout = QHBoxLayout()
-        title_label = QLabel("上车队列")
-        title_layout.addWidget(title_label)
-        
-        title_layout.addStretch()
-          # 上车统计
-        self.boarding_stats_label = QLabel("等待加载...")
-        title_layout.addWidget(self.boarding_stats_label)
-        
-        layout.addLayout(title_layout)
-          # 表格
-        self.boarding_table = QTableWidget()
-        self.boarding_table.setColumnCount(4)
-        self.boarding_table.setHorizontalHeaderLabels(["序号", "名字", "完成", "取消"])
-          # 设置表格属性
-        self.setup_table(self.boarding_table)
-        layout.addWidget(self.boarding_table)
         
         widget.setLayout(layout)
         return widget
@@ -679,18 +617,6 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.refresh_ui()
         self.log_widget.log_system_event("停止排队服务")
     
-    def start_boarding(self):
-        """开始上车"""
-        self.queue_manager.start_boarding()
-        self.update_button_states()
-        self.log_widget.log_system_event("开始上车服务")
-    
-    def stop_boarding(self):
-        """停止上车"""
-        self.queue_manager.stop_boarding()
-        self.update_button_states()
-        self.log_widget.log_system_event("停止上车服务")
-    
     def start_cutline(self):
         """开始插队"""
         self.queue_manager.start_cutline()
@@ -704,9 +630,9 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.log_widget.log_system_event("停止插队服务")
     
     def requeue(self):
-        """重新排队 - 清空排队队列、上车队列和插队队列重新开始"""
+        """重新排队 - 清空排队队列和插队队列重新开始"""
         reply = QMessageBox.question(
-            self, "确认", "确定要清空排队队列、上车队列和插队队列重新开始吗？",
+            self, "确认", "确定要清空排队队列和插队队列重新开始吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No        
         )
@@ -715,15 +641,11 @@ class SimpleQueueManagerWindow(QMainWindow):
             # 重置所有名单项目的队列标志
             for item in self.queue_manager.name_list:
                 item.in_queue = False
-                item.in_boarding = False
                 item.is_cutline = False
                 
             # 清空排队队列
             self.queue_manager.queue_list.clear()
             self.queue_manager.user_queued.clear()
-            
-            # 清空上车队列
-            self.queue_manager.user_boarded.clear()
             
             # 清空插队队列
             self.queue_manager.cutline_list.clear()
@@ -744,19 +666,11 @@ class SimpleQueueManagerWindow(QMainWindow):
             # 清除抽奖结果显示
             self.reset_lottery_display()
             
-            # 更新界面
-            self.update_queue_display()
-            self.update_boarding_display()
-            if hasattr(self, 'update_cutline_display'):
-                self.update_cutline_display()
-            
-            self.logger.info("重新排队完成：已清空排队队列、上车队列和插队队列")
-            
-              # 直接更新界面
+            # 直接更新界面（包括插队表格）
             self.update_queue_table()
-            self.update_boarding_table()  # 也更新上车队列表格
+            self.update_cutline_table()
             self.update_button_states()
-            self.log_widget.log_system_event("清空排队队列和上车队列，重新开始排队，已清除所有字体效果")
+            self.log_widget.log_system_event("清空排队队列和插队队列，重新开始，已清除所有字体效果")
     
     def reload_name_list(self):
         """重新加载名单 - 自动执行，返回成功状态"""
@@ -821,6 +735,114 @@ class SimpleQueueManagerWindow(QMainWindow):
             self.name_list_editor.activateWindow()
         except ImportError:
             QMessageBox.information(self, "提示", "名单编辑器功能尚未实现")
+    
+    def show_cutline_namelist_dialog(self):
+        """显示插队名单设置对话框"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QRadioButton, QButtonGroup, QLabel, QFileDialog
+        
+        class CutlineNamelistDialog(QDialog):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setWindowTitle("插队名单设置")
+                self.setFixedSize(400, 200)
+                self.setModal(True)
+                
+                layout = QVBoxLayout()
+                
+                # 说明文字
+                info_label = QLabel("选择插队功能使用的名单：")
+                info_label.setFont(QFont("", 10))
+                layout.addWidget(info_label)
+                
+                # 单选按钮组
+                self.button_group = QButtonGroup()
+                
+                # 使用排队名单选项
+                self.use_queue_radio = QRadioButton("使用排队队列名单")
+                self.button_group.addButton(self.use_queue_radio, 0)
+                layout.addWidget(self.use_queue_radio)
+                
+                # 使用自定义名单选项
+                self.use_custom_radio = QRadioButton("使用自定义名单")
+                self.button_group.addButton(self.use_custom_radio, 1)
+                layout.addWidget(self.use_custom_radio)
+                
+                # 自定义名单文件选择
+                file_layout = QHBoxLayout()
+                self.file_label = QLabel("未选择文件")
+                self.file_button = QPushButton("选择CSV文件")
+                self.file_button.clicked.connect(self.select_file)
+                file_layout.addWidget(self.file_label)
+                file_layout.addWidget(self.file_button)
+                layout.addLayout(file_layout)
+                
+                # 按钮
+                button_layout = QHBoxLayout()
+                ok_button = QPushButton("确定")
+                cancel_button = QPushButton("取消")
+                ok_button.clicked.connect(self.accept)
+                cancel_button.clicked.connect(self.reject)
+                button_layout.addWidget(ok_button)
+                button_layout.addWidget(cancel_button)
+                layout.addLayout(button_layout)
+                
+                self.setLayout(layout)
+                
+                # 初始化状态
+                self.custom_file_path = None
+                self.use_queue_radio.setChecked(True)
+                self.update_ui_state()
+                
+                # 连接信号
+                self.use_queue_radio.toggled.connect(self.update_ui_state)
+                
+            def update_ui_state(self):
+                """更新UI状态"""
+                is_custom = self.use_custom_radio.isChecked()
+                self.file_label.setEnabled(is_custom)
+                self.file_button.setEnabled(is_custom)
+                
+            def select_file(self):
+                """选择CSV文件"""
+                file_path, _ = QFileDialog.getOpenFileName(
+                    self, "选择CSV名单文件", "", "CSV文件 (*.csv)")
+                if file_path:
+                    self.custom_file_path = file_path
+                    import os
+                    self.file_label.setText(os.path.basename(file_path))
+        
+        # 创建并显示对话框
+        dialog = CutlineNamelistDialog(self)
+        
+        # 设置当前状态
+        if self.cutline_use_custom_namelist:
+            dialog.use_custom_radio.setChecked(True)
+            if self.cutline_custom_namelist:
+                import os
+                dialog.file_label.setText(os.path.basename(self.cutline_custom_namelist))
+                dialog.custom_file_path = self.cutline_custom_namelist
+        else:
+            dialog.use_queue_radio.setChecked(True)
+            
+        dialog.update_ui_state()
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # 保存设置
+            if dialog.use_custom_radio.isChecked():
+                if dialog.custom_file_path:
+                    self.cutline_use_custom_namelist = True
+                    self.cutline_custom_namelist = dialog.custom_file_path
+                    # 设置到队列管理器
+                    self.queue_manager.set_cutline_namelist(dialog.custom_file_path, True)
+                    self.log_widget.log_system_event(f"插队名单设置为: {dialog.custom_file_path}")
+                else:
+                    QMessageBox.warning(self, "警告", "请选择自定义名单文件！")
+            else:
+                self.cutline_use_custom_namelist = False
+                self.cutline_custom_namelist = None
+                # 设置到队列管理器
+                self.queue_manager.set_cutline_namelist(None, False)
+                self.log_widget.log_system_event("插队名单设置为: 使用排队队列名单")
     
     def on_name_list_changed(self):
         """名单变更处理 - 自动重载，只有失败时才提示"""
@@ -926,85 +948,6 @@ class SimpleQueueManagerWindow(QMainWindow):
             # 在表格更新后立即重新应用高亮
             QTimer.singleShot(10, self.reapply_all_highlights)
     
-    def update_boarding_table(self):
-        """更新上车队列表格"""
-        # 从队列管理器获取已上车用户，并查找对应的名单项目
-        boarding_items = []
-        for username in self.queue_manager.user_boarded:
-            # 在名单中查找用户信息
-            for item in self.queue_manager.name_list:
-                if item.name == username:
-                    boarding_items.append(item)
-                    break
-        
-        # 按序号排序
-        boarding_items.sort(key=lambda x: x.index)
-        
-        self.boarding_table.setRowCount(len(boarding_items))
-        
-        for row, item in enumerate(boarding_items):
-            # 序号列
-            index_item = QTableWidgetItem(str(item.index))
-            self.boarding_table.setItem(row, 0, index_item)
-            
-            # 名字列
-            name_item = QTableWidgetItem(item.name)
-            self.boarding_table.setItem(row, 1, name_item)            # 完成按钮
-            complete_btn = QPushButton("完成")
-            complete_btn.setProperty("table_row", row)
-            complete_btn.setProperty("table_type", "boarding")
-            complete_btn.setProperty("action_type", "complete")
-            complete_btn.clicked.connect(self.handle_table_button_click)
-            complete_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #d4edda;
-                    border: 1px solid #c3e6cb;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 12px;
-                    min-width: 50px;
-                    max-width: 70px;
-                    color: #155724;
-                }
-                QPushButton:hover {
-                    background-color: #c3e6cb;
-                    border-color: #b8dabc;
-                }
-                QPushButton:pressed {
-                    background-color: #b8dabc;
-                }
-            """)
-            self.boarding_table.setCellWidget(row, 2, complete_btn)
-            
-            # 取消按钮
-            cancel_btn = QPushButton("取消")
-            cancel_btn.setProperty("table_row", row)
-            cancel_btn.setProperty("table_type", "boarding")
-            cancel_btn.setProperty("action_type", "delete")
-            cancel_btn.clicked.connect(self.handle_table_button_click)
-            cancel_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #f8d7da;
-                    border: 1px solid #f5c6cb;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-size: 12px;
-                    min-width: 50px;
-                    max-width: 70px;
-                    color: #721c24;
-                }
-                QPushButton:hover {
-                    background-color: #f5c6cb;
-                    border-color: #f1b0b7;
-                }
-                QPushButton:pressed {
-                    background-color: #f1b0b7;
-                }
-            """)
-            self.boarding_table.setCellWidget(row, 3, cancel_btn)
-          # 更新统计
-        self.boarding_stats_label.setText(f"共 {len(boarding_items)} 人已上车")
-    
     def update_cutline_table(self):
         """更新插队队列表格"""
         cutline_list = self.queue_manager.cutline_list
@@ -1088,33 +1031,34 @@ class SimpleQueueManagerWindow(QMainWindow):
         """统一处理表格按钮点击"""
         sender = self.sender()
         if not sender:
+            gui_logger.warning("按钮点击事件：未找到发送者")
             return
         
         row = sender.property("table_row")
         table_type = sender.property("table_type")
         action_type = sender.property("action_type")
         
+        gui_logger.debug("按钮点击事件", f"行={row}, 表格={table_type}, 操作={action_type}")
+        
         if row is None or table_type is None:
+            gui_logger.warning("按钮点击事件：缺少必要属性", f"行={row}, 表格={table_type}")
             return
         
         try:
             if table_type == "queue":
                 if action_type == "cancel":
+                    gui_logger.info("执行排队取消操作", f"行={row}")
                     self.cancel_queue_item(row)
                 else:  # 默认为完成操作
+                    gui_logger.info("执行排队完成操作", f"行={row}")
                     self.complete_queue_item(row)
             elif table_type == "cutline":
                 if action_type == "cancel":
+                    gui_logger.info("执行插队取消操作", f"行={row}")
                     self.cancel_cutline_item(row)
                 else:  # 默认为完成操作
+                    gui_logger.info("执行插队完成操作", f"行={row}")
                     self.complete_cutline_item(row)
-            elif table_type == "boarding":
-                if action_type == "complete":
-                    self.complete_boarding_item(row)
-                elif action_type == "delete":
-                    self.delete_boarding_item(row)
-                else:  # 向后兼容，保留对 "remove" 的支持
-                    self.delete_boarding_item(row)
         except Exception as e:
             gui_logger.error("处理表格按钮点击时出错", str(e))
     
@@ -1124,20 +1068,14 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.start_queue_btn.setEnabled(not is_running)
         self.stop_queue_btn.setEnabled(is_running)
         
-        # 更新上车按钮状态
-        is_boarding = self.queue_manager.boarding_started
-        self.start_boarding_btn.setEnabled(not is_boarding)
-        self.stop_boarding_btn.setEnabled(is_boarding)
-        
         # 更新插队按钮状态
         is_cutline = self.queue_manager.cutline_started
         self.start_cutline_btn.setEnabled(not is_cutline)
         self.stop_cutline_btn.setEnabled(is_cutline)
           # 更新状态栏
         status_text = "运行中" if is_running else "已停止"
-        boarding_text = "运行中" if is_boarding else "已停止"
         cutline_text = "运行中" if is_cutline else "已停止"
-        self.queue_status_label.setText(f"排队: {status_text} | 插队: {cutline_text} | 上车: {boarding_text}")
+        self.queue_status_label.setText(f"排队: {status_text} | 插队: {cutline_text}")
     
     def update_status(self, message: str):
         """更新状态显示"""
@@ -1147,7 +1085,7 @@ class SimpleQueueManagerWindow(QMainWindow):
         """更新状态栏信息"""
         try:
             status = self.queue_manager.get_queue_status()
-            stats_text = f"名单: {status['total_names']} | 排队: {status['queue_count']} | 上车: {status['boarding_count']}"
+            stats_text = f"名单: {status['total_names']} | 排队: {status['queue_count']}"
             self.stats_status_label.setText(stats_text)
         except Exception as e:
             self.stats_status_label.setText(f"统计: 错误 - {e}")
@@ -1170,71 +1108,41 @@ class SimpleQueueManagerWindow(QMainWindow):
                 self.refresh_ui()  # 直接刷新UI
                 self.log_widget.log_system_event(f"{item.name} 取消排队（未扣除次数）")
     
-    def delete_boarding_item(self, row: int):
-        """删除上车项目（不扣除次数）"""
-        try:
-            # 从上车队列表格获取用户信息
-            boarding_items = []
-            for username in self.queue_manager.user_boarded:
-                for item in self.queue_manager.name_list:
-                    if item.name == username:
-                        boarding_items.append(item)
-                        break
-            
-            # 按序号排序
-            boarding_items.sort(key=lambda x: x.index)
-            
-            if 0 <= row < len(boarding_items):
-                removed_item = boarding_items[row]
-                # 调用队列管理器的删除上车方法（确保正确重置状态）
-                success = self.queue_manager.delete_boarding_item(removed_item.name)
-                if success:
-                    self.refresh_ui()  # 直接刷新UI
-                    self.log_widget.log_system_event(f"{removed_item.name} 已从上车队列删除（未扣除次数）")
-        except Exception as e:
-            gui_logger.error("移除上车项目时出错", str(e))
-    
     def complete_cutline_item(self, index: int):
         """完成插队项目"""
+        gui_logger.debug("完成插队项目", f"索引={index}, 插队列表长度={len(self.queue_manager.cutline_list)}")
+        
         if 0 <= index < len(self.queue_manager.cutline_list):
             item = self.queue_manager.cutline_list[index]
+            gui_logger.info("准备完成插队", f"用户={item.name}, 索引={index}")
+            
             success = self.queue_manager.complete_cutline_item(item.name)
             if success:
+                gui_logger.operation_complete("插队完成", f"用户={item.name}")
                 self.refresh_ui()  # 直接刷新UI
                 self.log_widget.log_queue_complete(item.name, "插队队列")
+            else:
+                gui_logger.error("插队完成失败", f"用户={item.name}")
+        else:
+            gui_logger.error("插队索引越界", f"索引={index}, 插队列表长度={len(self.queue_manager.cutline_list)}")
     
     def cancel_cutline_item(self, index: int):
         """取消插队项目（不扣除次数）"""
+        gui_logger.debug("取消插队项目", f"索引={index}, 插队列表长度={len(self.queue_manager.cutline_list)}")
+        
         if 0 <= index < len(self.queue_manager.cutline_list):
             item = self.queue_manager.cutline_list[index]
+            gui_logger.info("准备取消插队", f"用户={item.name}, 索引={index}")
+            
             success = self.queue_manager.delete_cutline_item(item.name)
             if success:
+                gui_logger.operation_complete("插队取消", f"用户={item.name}")
                 self.refresh_ui()  # 直接刷新UI
                 self.log_widget.log_system_event(f"{item.name} 取消插队（未扣除次数）")
-    
-    def complete_boarding_item(self, row: int):
-        """完成上车项目（扣除次数）"""
-        try:
-            # 从上车队列表格获取用户信息
-            boarding_items = []
-            for username in self.queue_manager.user_boarded:
-                for item in self.queue_manager.name_list:
-                    if item.name == username:
-                        boarding_items.append(item)
-                        break
-            
-            # 按序号排序
-            boarding_items.sort(key=lambda x: x.index)
-            
-            if 0 <= row < len(boarding_items):
-                completed_item = boarding_items[row]
-                # 调用队列管理器的完成上车方法
-                success = self.queue_manager.complete_boarding_item(completed_item.name)
-                if success:
-                    self.refresh_ui()  # 直接刷新UI
-                    self.log_widget.log_system_event(f"{completed_item.name} 完成上车（已扣除次数）")
-        except Exception as e:
-            gui_logger.error("完成上车项目时出错", str(e))
+            else:
+                gui_logger.error("插队取消失败", f"用户={item.name}")
+        else:
+            gui_logger.error("插队索引越界", f"索引={index}, 插队列表长度={len(self.queue_manager.cutline_list)}")
     
     def closeEvent(self, event):
         """窗口关闭事件"""
@@ -1297,35 +1205,6 @@ class SimpleQueueManagerWindow(QMainWindow):
         except Exception as e:
             self.log_widget.log_queue_failed(username, f"系统错误: {str(e)}")
     
-    def process_danmaku_boarding(self, username: str):
-        """
-        处理弹幕上车请求
-        
-        Args:
-            username (str): 用户名
-        """
-        try:
-            # 调用队列管理器的上车处理函数，这里是弹幕处理，不是手动添加，所以不传is_manual参数
-            success = self.queue_manager.process_boarding_request(username)
-            
-            if success:
-                # 直接刷新UI
-                self.refresh_ui()
-                
-                # 记录成功日志
-                self.log_widget.log_queue_success(username, "弹幕上车", 0)  # 上车不扣除次数，所以是0
-            else:
-                # 可能的失败原因：上车服务未开启、用户已在队列中、名单中找不到
-                if not self.queue_manager.boarding_started:
-                    self.log_widget.log_queue_failed(username, "上车服务未开启")
-                elif username in self.queue_manager.user_boarded:
-                    self.log_widget.log_queue_failed(username, "已上车")
-                else:
-                    self.log_widget.log_queue_failed(username, "名单中找不到或次数不足")
-                
-        except Exception as e:
-            self.log_widget.log_queue_failed(username, f"系统错误: {str(e)}")
-    
     def process_danmaku_cutline(self, username: str):
         """
         处理弹幕插队请求
@@ -1355,6 +1234,29 @@ class SimpleQueueManagerWindow(QMainWindow):
                 
         except Exception as e:
             self.log_widget.log_queue_failed(username, f"系统错误: {str(e)}")
+    
+    def handle_danmaku_message(self, message_data):
+        """
+        处理弹幕消息 - 兼容主窗口调用
+        
+        Args:
+            message_data (dict): 弹幕消息数据
+        """
+        try:
+            message_type = message_data.get('type', '')
+            username = message_data.get('username', '')
+            message_content = message_data.get('message', '')
+            
+            # 处理排队弹幕
+            if '排队' in message_content:
+                self.process_danmaku_queue(username)
+            # 处理插队弹幕
+            elif '插队' in message_content:
+                self.process_danmaku_cutline(username)
+            # 注意：排队工具2不处理上车弹幕
+                
+        except Exception as e:
+            gui_logger.error("处理弹幕消息失败", str(e))
     
     def on_table_item_double_clicked(self, item):
         """处理表格项目双击事件"""
@@ -1408,9 +1310,9 @@ class SimpleQueueManagerWindow(QMainWindow):
     def start_random_selection(self):
         """开始随机选择抽奖动画"""
         # 执行队列管理器的随机选择
-        selected_indices, selected_names = self.queue_manager.random_select(2)
+        selected_indices, selected_names = self.queue_manager.random_select(1)
         if not selected_indices:
-            QMessageBox.warning(self, "警告", "排队队列中至少需要2个人才能进行随机选择")
+            QMessageBox.warning(self, "警告", "排队队列中至少需要1个人才能进行随机选择")
             return
 
         # 如果已经在动画中，直接返回
@@ -1429,7 +1331,8 @@ class SimpleQueueManagerWindow(QMainWindow):
         self.final_highlighted_rows = []
 
         # 启动抽奖动画线程（只用于展示动画，不执行实际抽奖）
-        self.animation_thread = RandomSelectionAnimationThread(
+        from utils.lottery_animation_single import SingleRandomSelectionAnimationThread
+        self.animation_thread = SingleRandomSelectionAnimationThread(
             self.queue_manager.queue_list, 
             self.queue_manager.recent_winners
         )
@@ -1442,48 +1345,26 @@ class SimpleQueueManagerWindow(QMainWindow):
     def update_lottery_display(self, user1_name, user2_name, char):
         """更新抽奖显示文本"""
         try:
-            # 更新1号框显示
-            display_text1 = f"{char} {user1_name}"
+            # 只更新单个抽奖框显示
+            display_text = f"{char} {user1_name}"
             # 如果文本过长，截断显示
-            if len(display_text1) > 15:
-                display_text1 = f"{char} {user1_name[:8]}..."
-            self.lottery_display_user1.setText(display_text1)
+            if len(display_text) > 20:
+                display_text = f"{char} {user1_name[:12]}..."
+            self.lottery_display_user1.setText(display_text)
             self.lottery_display_user1.setStyleSheet("""
                 QLabel {
                     background-color: #fff3cd;
                     border: 2px solid #ffeaa7;
                     border-radius: 6px;
-                    padding: 6px 10px;
-                    font-size: 12px;
+                    padding: 8px 15px;
+                    font-size: 14px;
                     font-weight: normal;
                     color: #856404;
-                    min-width: 100px;
-                    max-width: 120px;
-                    min-height: 28px;
+                    min-width: 200px;
+                    max-width: 300px;
+                    min-height: 35px;
                 }
             """)
-            
-            # 更新2号框显示
-            if user2_name:
-                display_text2 = f"{char} {user2_name}"
-                # 如果文本过长，截断显示
-                if len(display_text2) > 15:
-                    display_text2 = f"{char} {user2_name[:8]}..."
-                self.lottery_display_user2.setText(display_text2)
-                self.lottery_display_user2.setStyleSheet("""
-                    QLabel {
-                        background-color: #fff3cd;
-                        border: 2px solid #ffeaa7;
-                        border-radius: 6px;
-                        padding: 6px 10px;
-                        font-size: 12px;
-                        font-weight: normal;
-                        color: #856404;
-                        min-width: 100px;
-                        max-width: 120px;
-                        min-height: 28px;
-                    }
-                """)
         except Exception as e:
             gui_logger.error("更新抽奖显示时出错", str(e))
     
@@ -1493,50 +1374,30 @@ class SimpleQueueManagerWindow(QMainWindow):
             # 停止动画状态
             self.is_animating = False
             
-            # 显示最终选中结果 - 分别显示两个用户，处理长用户名
-            user1_text = f"🏆 {final_names[0]}"
-            if len(user1_text) > 15:
-                user1_text = f"🏆 {final_names[0][:8]}..."
+            # 显示最终选中结果 - 只显示一个用户
+            user_text = f"🏆 {final_names[0]}" if final_names else "🏆 无人中奖"
+            if len(user_text) > 20:
+                user_text = f"🏆 {final_names[0][:12]}..."
                 
-            user2_text = f"🏆 {final_names[1]}" if len(final_names) > 1 else "🏆 无"
-            if len(user2_text) > 15:
-                user2_text = f"🏆 {final_names[1][:8]}..."
-                
-            self.lottery_display_user1.setText(user1_text)
+            self.lottery_display_user1.setText(user_text)
             self.lottery_display_user1.setStyleSheet("""
                 QLabel {
                     background-color: #d4edda;
                     border: 2px solid #c3e6cb;
                     border-radius: 6px;
-                    padding: 6px 10px;
-                    font-size: 12px;
-                    font-weight: normal;
+                    padding: 8px 15px;
+                    font-size: 14px;
+                    font-weight: bold;
                     color: #155724;
-                    min-width: 100px;
-                    max-width: 120px;
-                    min-height: 28px;
-                }
-            """)
-            
-            self.lottery_display_user2.setText(user2_text)
-            self.lottery_display_user2.setStyleSheet("""
-                QLabel {
-                    background-color: #d4edda;
-                    border: 2px solid #c3e6cb;
-                    border-radius: 6px;
-                    padding: 6px 10px;
-                    font-size: 12px;
-                    font-weight: normal;
-                    color: #155724;
-                    min-width: 100px;
-                    max-width: 120px;
-                    min-height: 28px;
+                    min-width: 200px;
+                    max-width: 300px;
+                    min-height: 35px;
                 }
             """)
             
             # 记录日志
             if final_names:
-                log_text = f"随机选择结果: {', '.join(final_names)}"
+                log_text = f"随机选择结果: {final_names[0]}"
                 self.log_widget.log_system_event(log_text)
                 gui_logger.debug("抽奖日志", log_text)
             
@@ -1556,47 +1417,32 @@ class SimpleQueueManagerWindow(QMainWindow):
 
     def reset_lottery_display(self):
         """重置抽奖显示区域"""
-        self.lottery_display_user1.setText("1号框 - 等待抽奖")
+        self.lottery_display_user1.setText("等待抽奖")
         self.lottery_display_user1.setStyleSheet("""
             QLabel {
                 background-color: #f8f9fa;
                 border: 2px solid #dee2e6;
                 border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
+                padding: 8px 15px;
+                font-size: 14px;
                 font-weight: normal;
                 color: #495057;
-                min-width: 100px;
-                max-width: 120px;
-                min-height: 28px;
-            }
-        """)
-        
-        self.lottery_display_user2.setText("2号框 - 等待抽奖")
-        self.lottery_display_user2.setStyleSheet("""
-            QLabel {
-                background-color: #f8f9fa;
-                border: 2px solid #dee2e6;
-                border-radius: 6px;
-                padding: 6px 10px;
-                font-size: 12px;
-                font-weight: normal;
-                color: #495057;
-                min-width: 100px;
-                max-width: 120px;
-                min-height: 28px;
+                min-width: 200px;
+                max-width: 300px;
+                min-height: 35px;
             }
         """)
     
     def apply_final_highlights(self):
         """对移动到顶部的项目应用持续高亮效果"""
         try:
-            # 高亮前两行（移动到顶部的随机选中项目）
-            for row in range(min(2, self.queue_table.rowCount())):
-                self.highlight_table_row(row, "final")
-            
-            # 记录高亮的行，用于后续维护
-            self.final_highlighted_rows = list(range(min(2, self.queue_table.rowCount())))
+            # 高亮第一行（移动到顶部的随机选中项目）
+            if self.queue_table.rowCount() > 0:
+                self.highlight_table_row(0, "final")
+                # 记录高亮的行，用于后续维护
+                self.final_highlighted_rows = [0]
+            else:
+                self.final_highlighted_rows = []
             
             gui_logger.debug("已对置顶项目应用持续高亮效果")
             

@@ -16,6 +16,15 @@ from logging.handlers import RotatingFileHandler
 class EnhancedLogger:
     """增强的日志记录器，支持多级别和文件轮转"""
     
+    # 日志级别映射
+    LOG_LEVELS = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+    
     def __init__(self, name: str = "QueueSystem", log_dir: Optional[str] = None):
         """
         初始化增强日志记录器
@@ -38,6 +47,38 @@ class EnhancedLogger:
         if not self.logger.handlers:
             self.setup_handlers()
     
+    def set_log_level(self, level: str):
+        """
+        设置日志级别
+        
+        Args:
+            level: 日志级别 ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')
+        """
+        if level in self.LOG_LEVELS:
+            log_level = self.LOG_LEVELS[level]
+            
+            # 更新主日志器级别
+            self.logger.setLevel(log_level)
+            
+            # 更新控制台处理器级别
+            for handler in self.logger.handlers:
+                if isinstance(handler, logging.StreamHandler) and not isinstance(handler, RotatingFileHandler):
+                    handler.setLevel(log_level)
+            
+            # 只在主系统日志器中记录级别变更，避免重复输出
+            if self.name == "MainSystem":
+                self.debug(f"日志级别已设置为: {level}")
+        else:
+            self.warning(f"无效的日志级别: {level}, 可用级别: {', '.join(self.LOG_LEVELS.keys())}")
+    
+    def get_current_log_level(self) -> str:
+        """获取当前日志级别"""
+        current_level = self.logger.level
+        for level_name, level_value in self.LOG_LEVELS.items():
+            if level_value == current_level:
+                return level_name
+        return 'INFO'  # 默认
+    
     def ensure_log_directory(self):
         """确保日志目录存在"""
         try:
@@ -56,7 +97,8 @@ class EnhancedLogger:
         )
         file_handler.setLevel(logging.DEBUG)
         file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+            '[%(asctime)s][%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
         file_handler.setFormatter(file_formatter)
         
@@ -64,8 +106,8 @@ class EnhancedLogger:
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
+            '[%(asctime)s][%(levelname)s] %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
         )
         console_handler.setFormatter(console_formatter)
         

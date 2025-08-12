@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-B站直播弹幕监控程序 - 主入口文件
-使用 bilibili-api 库实现
-优化版本 - 提升启动速度和稳定性
+B站直播弹幕监控程序 - 排队工具2专用入口文件
+简化版本，专注于排队和插队功能
 """
 
 import sys
@@ -23,9 +22,6 @@ def setup_environment():
     """设置运行环境"""
     # 设置工作目录
     os.chdir(current_dir)
-    
-    # 跳过DPI设置以避免权限问题
-    # Qt6会自动处理DPI缩放
 
 
 def configure_third_party_logging():
@@ -59,7 +55,7 @@ def configure_third_party_logging():
 
 
 def main():
-    """主函数 - 优化启动速度"""
+    """主函数 - 排队工具2专用"""
     try:
         # 设置环境
         setup_environment()
@@ -71,7 +67,7 @@ def main():
         from utils import get_main_logger
         from version_info import get_version_string
         main_logger = get_main_logger()
-        main_logger.operation_start("应用程序启动", get_version_string())
+        main_logger.operation_start("排队工具2启动", get_version_string())
         
         # 延迟导入PyQt6以提升启动速度
         from PyQt6.QtWidgets import QApplication
@@ -81,67 +77,36 @@ def main():
         
         # 设置应用程序信息
         from version_info import APP_NAME, APP_VERSION, ORGANIZATION_NAME
-        app.setApplicationName(APP_NAME)
+        app.setApplicationName(f"{APP_NAME} - 排队工具2")
         app.setApplicationVersion(APP_VERSION)
         app.setOrganizationName(ORGANIZATION_NAME)
         
         # 设置应用程序图标
         from config import Constants
-        from PyQt6.QtGui import QIcon
         icon_path = Constants.get_icon_path(128)
         if icon_path:
+            from PyQt6.QtGui import QIcon
             app.setWindowIcon(QIcon(icon_path))
-            main_logger.debug("应用程序图标设置成功", f"路径: {icon_path}")
         
-        # 延迟导入主窗口模块
-        main_logger.operation_start("加载主窗口模块")
-        from gui.main_window import BilibiliDanmakuMonitor
+        # 创建并显示主窗口 - 使用简化的主窗口
+        from gui.main_window_queue2 import MainWindowQueue2
+        main_window = MainWindowQueue2()
+        main_window.show()
         
-        # 创建主窗口
-        main_logger.operation_start("创建主窗口")
-        window = BilibiliDanmakuMonitor()
-        window.show()
-        main_logger.operation_complete("主窗口创建", "窗口已显示")
+        main_logger.operation_complete("排队工具2启动完成")
         
-        # 运行应用程序
-        main_logger.info("应用程序启动成功，进入主循环")
-        sys.exit(app.exec())
+        # 运行应用程序主循环
+        return app.exec()
         
-    except ImportError as e:
-        error_msg = f"导入模块失败: {str(e)}\n请确保已安装所有依赖包！"
-        try:
-            from utils import get_main_logger
-            main_logger = get_main_logger()
-            main_logger.error("导入模块失败", str(e))
-        except:
-            print(error_msg)  # 日志系统不可用时的后备方案
-        try:
-            from PyQt6.QtWidgets import QApplication, QMessageBox
-            app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()
-            QMessageBox.critical(None, "启动错误", error_msg)
-        except Exception:
-            pass
-        sys.exit(1)
-        
+    except KeyboardInterrupt:
+        print("\n程序被用户中断")
+        return 0
     except Exception as e:
-        error_msg = f"程序启动失败: {str(e)}"
-        try:
-            from utils import get_main_logger
-            main_logger = get_main_logger()
-            main_logger.error("程序启动失败", str(e), exc_info=True)
-        except:
-            print(error_msg)  # 日志系统不可用时的后备方案
-        try:
-            import traceback
-            traceback.print_exc()
-            
-            from PyQt6.QtWidgets import QApplication, QMessageBox
-            app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()
-            QMessageBox.critical(None, "启动错误", error_msg + "\n\n详细信息请查看控制台输出。")
-        except Exception:
-            pass
-        sys.exit(1)
+        print(f"程序启动失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

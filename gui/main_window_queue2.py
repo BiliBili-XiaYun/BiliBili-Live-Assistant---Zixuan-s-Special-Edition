@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-主窗口模块 - B站弹幕监控主界面
+主窗口模块 - B站弹幕监控主界面 (排队工具2专用版)
+直接复制原版代码，只去除上车相关功能
 """
 
 import os
@@ -24,9 +25,9 @@ except ImportError:
 
 from bilibili import DanmakuMonitorThread, LoginManager
 from gui.login_dialog import LoginDialog
-from gui.queue_window_simple import SimpleQueueManagerWindow
+from gui.queue_window_queue2 import Queue2ManagerWindow
 from gui.name_list_editor import NameListEditor
-from queue_manager import QueueManager
+from queue_manager.manager_queue2 import QueueManager
 from utils import extract_room_id, is_test_mode_input, gui_logger
 from config import Constants, app_config
 
@@ -35,12 +36,12 @@ if not PLYER_AVAILABLE:
     gui_logger.warning("plyer库未安装，将使用备用通知方式")
 
 
-class BilibiliDanmakuMonitor(QMainWindow):
-    """B站弹幕监控主窗口"""
+class MainWindowQueue2(QMainWindow):
+    """B站弹幕监控主窗口 - 排队工具2专用版本"""
     def __init__(self):
         """初始化主窗口"""
         super().__init__()
-          # 登录管理器
+        # 登录管理器
         self.login_manager = LoginManager()
         
         # 队列管理器 - 独立于排队窗口，用于处理舰长礼物等事件
@@ -48,10 +49,10 @@ class BilibiliDanmakuMonitor(QMainWindow):
         
         # 监控线程
         self.monitor_thread = None
-          # 子窗口
+        # 子窗口
         self.queue_window = None
         self.name_list_editor = None
-          # 测试模式相关
+        # 测试模式相关
         self.is_test_mode = False
         
         # 新舰长数据
@@ -71,7 +72,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
         """初始化用户界面"""
         # 直接从 version_info 导入应用名称，避免使用 property
         from version_info import APP_NAME
-        self.setWindowTitle(f"{APP_NAME} (bilibili-api)")
+        self.setWindowTitle(f"{APP_NAME} - 排队工具2 (bilibili-api)")
         self.setGeometry(100, 100, *Constants.MAIN_WINDOW_SIZE)
         
         # 设置窗口图标
@@ -183,10 +184,10 @@ class BilibiliDanmakuMonitor(QMainWindow):
         self.name_list_btn.setMinimumHeight(40)
         control_layout.addWidget(self.name_list_btn)
         
-        # 排队按钮
-        self.queue_btn = QPushButton("📋 排队管理")
+        # 排队按钮 - 标记为排队工具2
+        self.queue_btn = QPushButton("🎯 排队工具2")
         self.queue_btn.clicked.connect(self.show_queue_window)
-        self.queue_btn.setStyleSheet("background-color: #FF9800;")
+        self.queue_btn.setStyleSheet("background-color: #FF5722;")  # 使用不同颜色区分
         self.queue_btn.setMinimumHeight(40)
         control_layout.addWidget(self.queue_btn)
         
@@ -245,7 +246,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
         status_layout.addWidget(self.status_label)
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)
-          # 弹幕显示区域
+        # 弹幕显示区域
         danmaku_group = QGroupBox("弹幕监控")
         danmaku_layout = QVBoxLayout()
         
@@ -283,11 +284,10 @@ class BilibiliDanmakuMonitor(QMainWindow):
     
     def show_queue_window(self):
         """显示排队管理窗口"""
-        # 使用增强版排队窗口
-        # 导入简洁版排队窗口
+        # 使用排队工具2专用窗口
         if self.queue_window is None:
             # 传递主窗口的队列管理器给排队窗口，但不设置父窗口以便独立显示在任务栏
-            self.queue_window = SimpleQueueManagerWindow(None, self.queue_manager)
+            self.queue_window = Queue2ManagerWindow(None, self.queue_manager)
             # 新创建的排队窗口，需要从配置同步路径
             self.sync_file_path_from_config()
         
@@ -440,7 +440,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
     
     def on_message_received(self, message_info: dict):
         """
-        处理接收到的消息
+        处理接收到的消息 - 去除上车相关逻辑
         
         Args:
             message_info (dict): 消息信息字典
@@ -448,7 +448,8 @@ class BilibiliDanmakuMonitor(QMainWindow):
         try:
             message_type = message_info.get('type', 'unknown')
             timestamp = message_info.get('timestamp', '')
-            username = message_info.get('username', '未知用户')            # 检查是否为排队弹幕（关键词匹配）
+            username = message_info.get('username', '未知用户')            
+            # 检查是否为排队弹幕（关键词匹配）
             if (message_type == Constants.MESSAGE_TYPE_DANMAKU and 
                 Constants.QUEUE_KEYWORD in message_info.get('message', '')):
                 if self.queue_window:
@@ -460,11 +461,14 @@ class BilibiliDanmakuMonitor(QMainWindow):
                 if self.queue_window:
                     self.queue_window.process_danmaku_cutline(username)
             
-            # 检查是否为上车弹幕（关键词匹配）
-            elif (message_type == Constants.MESSAGE_TYPE_DANMAKU and 
-                  Constants.BOARDING_KEYWORD in message_info.get('message', '')):
-                if self.queue_window:
-                    self.queue_window.process_danmaku_boarding(username)            # 处理舰长礼物事件
+            # 注意：这里移除了上车弹幕的处理逻辑
+            # 删除了以下代码：
+            # elif (message_type == Constants.MESSAGE_TYPE_DANMAKU and 
+            #       Constants.BOARDING_KEYWORD in message_info.get('message', '')):
+            #     if self.queue_window:
+            #         self.queue_window.process_danmaku_boarding(username)
+            
+            # 处理舰长礼物事件
             elif message_type == Constants.MESSAGE_TYPE_GUARD:
                 guard_level = message_info.get('guard_level', 0)
                 guard_months = message_info.get('num', 1)  # 购买的月份数量
@@ -554,7 +558,8 @@ class BilibiliDanmakuMonitor(QMainWindow):
         gui_logger.error("发生错误", error)
         QMessageBox.critical(self, "错误", error)
         
-        # 重置UI状态        self.connect_btn.setEnabled(True)
+        # 重置UI状态        
+        self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
         self.room_input.setEnabled(True)
         self.is_test_mode = False
@@ -646,7 +651,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
         title_layout.addWidget(title_label)
         
         title_layout.addStretch()
-          # 刷新按钮
+        # 刷新按钮
         self.refresh_guard_btn = QPushButton("刷新")
         self.refresh_guard_btn.clicked.connect(self.refresh_new_guard_data)
         self.refresh_guard_btn.setMaximumWidth(80)
@@ -654,7 +659,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
         title_layout.addWidget(self.refresh_guard_btn)
         
         layout.addLayout(title_layout)
-          # 统计信息
+        # 统计信息
         self.new_guard_stats_label = QLabel("加载中...")
         self.new_guard_stats_label.setStyleSheet("color: #666; font-size: 12px;")
         layout.addWidget(self.new_guard_stats_label)
@@ -670,7 +675,7 @@ class BilibiliDanmakuMonitor(QMainWindow):
         self.new_guard_table.setAlternatingRowColors(True)
         self.new_guard_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.new_guard_table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-          # 设置表格样式，修复选中时文字看不清的问题
+        # 设置表格样式，修复选中时文字看不清的问题
         self.new_guard_table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #d0d0d0;
@@ -841,7 +846,8 @@ class BilibiliDanmakuMonitor(QMainWindow):
             if self.guard_csv_path:
                 filename = os.path.basename(self.guard_csv_path)
                 self.guard_file_label.setText(f"文件: {filename}")
-            else:                self.guard_file_label.setText("文件: 未找到")
+            else:                
+                self.guard_file_label.setText("文件: 未找到")
                 
         except Exception as e:
             print(f"更新新舰长表格失败: {e}")

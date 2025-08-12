@@ -337,3 +337,43 @@ class LoginManager:
             return False
         
         return True
+    
+    def _fetch_user_info(self, cookies: Dict[str, str]) -> Optional[UserInfo]:
+        """
+        获取用户信息
+        
+        Args:
+            cookies (Dict): cookies字典
+            
+        Returns:
+            Optional[UserInfo]: 用户信息对象
+        """
+        try:
+            # 构建cookie字符串
+            cookie_str = '; '.join([f"{k}={v}" for k, v in cookies.items()])
+            headers = {
+                **Constants.DEFAULT_HEADERS,
+                'Cookie': cookie_str
+            }
+            
+            resp = requests.get(
+                'https://api.bilibili.com/x/web-interface/nav',
+                headers=headers,
+                timeout=Constants.HTTP_TIMEOUT
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if data['code'] == 0:
+                    user_data = data['data']
+                    return UserInfo(
+                        mid=user_data.get('mid', 0),
+                        uname=user_data.get('uname', ''),
+                        face=user_data.get('face', ''),
+                        vip_type=user_data.get('vipType', 0),
+                        level=user_data.get('level_info', {}).get('current_level', 0)
+                    )
+        except Exception:
+            pass
+        
+        return None
