@@ -745,17 +745,11 @@ class SimpleQueueManagerWindow(QMainWindow):
             self.reset_lottery_display()
             
             # 更新界面
-            self.update_queue_display()
-            self.update_boarding_display()
-            if hasattr(self, 'update_cutline_display'):
-                self.update_cutline_display()
-            
-            self.logger.info("重新排队完成：已清空排队队列、上车队列和插队队列")
-            
-              # 直接更新界面
             self.update_queue_table()
-            self.update_boarding_table()  # 也更新上车队列表格
+            self.update_boarding_table()
             self.update_button_states()
+            
+            gui_logger.info("重新排队完成：已清空排队队列、上车队列和插队队列")
             self.log_widget.log_system_event("清空排队队列和上车队列，重新开始排队，已清除所有字体效果")
     
     def reload_name_list(self):
