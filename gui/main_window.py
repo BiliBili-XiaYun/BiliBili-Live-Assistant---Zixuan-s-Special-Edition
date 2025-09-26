@@ -29,6 +29,8 @@ from gui.name_list_editor import NameListEditor
 from queue_manager import QueueManager
 from utils import extract_room_id, is_test_mode_input, gui_logger
 from config import Constants, app_config
+from vote import VoteManager
+from vote.vote_overlay import VoteOverlayWindow
 
 # 现在可以使用gui_logger了
 if not PLYER_AVAILABLE:
@@ -45,6 +47,9 @@ class BilibiliDanmakuMonitor(QMainWindow):
         
         # 队列管理器 - 独立于排队窗口，用于处理舰长礼物等事件
         self.queue_manager = QueueManager()
+        # 投票管理
+        self.vote_manager = VoteManager()
+        self.vote_overlay: VoteOverlayWindow | None = None
         
         # 监控线程
         self.monitor_thread = None
@@ -158,47 +163,84 @@ class BilibiliDanmakuMonitor(QMainWindow):
         layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
         
-        # 顶部控制区域
+        # 顶部控制区域（改为多行自适应网格，避免过宽）
+        from PyQt6.QtWidgets import QGridLayout, QSizePolicy
         control_group = QGroupBox("用户控制")
-        control_layout = QHBoxLayout()
-        control_layout.setSpacing(10)
-        
+        control_layout = QGridLayout()
+        control_layout.setHorizontalSpacing(8)
+        control_layout.setVerticalSpacing(6)
+        control_layout.setContentsMargins(10, 12, 10, 10)
+
         # 登录按钮
         self.login_btn = QPushButton("🔑 登录B站")
         self.login_btn.clicked.connect(self.show_login_dialog)
-        self.login_btn.setMinimumHeight(40)
-        control_layout.addWidget(self.login_btn)
-        
+        self.login_btn.setMinimumHeight(38)
+        control_layout.addWidget(self.login_btn, 0, 0)
+
         # 用户信息显示
         self.user_label = QLabel("📱 未登录")
         self.user_label.setStyleSheet("color: #666; font-weight: bold;")
-        control_layout.addWidget(self.user_label)
-        
-        control_layout.addStretch()
-        
+        control_layout.addWidget(self.user_label, 0, 1)
+
         # 名单编辑按钮
         self.name_list_btn = QPushButton("📝 名单编辑")
         self.name_list_btn.clicked.connect(self.show_name_list_editor)
         self.name_list_btn.setStyleSheet("background-color: #2196F3;")
-        self.name_list_btn.setMinimumHeight(40)
-        control_layout.addWidget(self.name_list_btn)
-        
+        self.name_list_btn.setMinimumHeight(38)
+        control_layout.addWidget(self.name_list_btn, 0, 2)
+
         # 排队按钮
         self.queue_btn = QPushButton("📋 排队管理")
         self.queue_btn.clicked.connect(self.show_queue_window)
         self.queue_btn.setStyleSheet("background-color: #FF9800;")
-        self.queue_btn.setMinimumHeight(40)
-        control_layout.addWidget(self.queue_btn)
-        
+        self.queue_btn.setMinimumHeight(38)
+        control_layout.addWidget(self.queue_btn, 0, 3)
+
         # 设置按钮
         self.settings_btn = QPushButton("⚙️ 设置")
         self.settings_btn.clicked.connect(self.show_settings_dialog)
         self.settings_btn.setStyleSheet("background-color: #9C27B0;")
-        self.settings_btn.setMinimumHeight(40)
-        control_layout.addWidget(self.settings_btn)
-        
+        self.settings_btn.setMinimumHeight(38)
+        control_layout.addWidget(self.settings_btn, 0, 4)
+
+        # 投票按钮
+        self.start_vote_btn = QPushButton("🗳️ 开始投票")
+        self.start_vote_btn.setStyleSheet("background-color: #3F51B5;")
+        self.start_vote_btn.setMinimumHeight(38)
+        self.start_vote_btn.clicked.connect(self.show_vote_dialog)
+        control_layout.addWidget(self.start_vote_btn, 1, 0)
+
+        self.end_vote_btn = QPushButton("✅ 结束投票")
+        self.end_vote_btn.setStyleSheet("background-color: #607D8B;")
+        self.end_vote_btn.setMinimumHeight(38)
+        self.end_vote_btn.setEnabled(False)
+        self.end_vote_btn.clicked.connect(self.end_current_vote)
+        control_layout.addWidget(self.end_vote_btn, 1, 1)
+
+        # 显示/隐藏投票悬浮窗按钮
+        self.toggle_vote_overlay_btn = QPushButton("🖥️ 显示投票窗口")
+        self.toggle_vote_overlay_btn.setStyleSheet("background-color: #546E7A;")
+        self.toggle_vote_overlay_btn.setMinimumHeight(36)
+        self.toggle_vote_overlay_btn.clicked.connect(self.toggle_vote_overlay)
+        self.toggle_vote_overlay_btn.setEnabled(False)
+        control_layout.addWidget(self.toggle_vote_overlay_btn, 1, 2)
+
+        # 查看投票结果按钮（结束后可用）
+        self.view_vote_result_btn = QPushButton("📊 查看投票结果")
+        self.view_vote_result_btn.setStyleSheet("background-color: #37474F;")
+        self.view_vote_result_btn.setMinimumHeight(36)
+        self.view_vote_result_btn.clicked.connect(self.view_last_vote_result)
+        self.view_vote_result_btn.setEnabled(False)
+        control_layout.addWidget(self.view_vote_result_btn, 1, 3)
+
+        # 占位伸展列，避免内容撑宽窗口
+        control_layout.setColumnStretch(5, 1)
+
         control_group.setLayout(control_layout)
         layout.addWidget(control_group)
+
+        # 约束整体最大宽度，防止窗口过宽
+        central_widget.setMaximumWidth(880)
         
         # 直播间连接区域
         room_group = QGroupBox("直播间连接")
@@ -274,6 +316,243 @@ class BilibiliDanmakuMonitor(QMainWindow):
         layout.addWidget(danmaku_group)
         
         central_widget.setLayout(layout)
+
+    # ---------------- 投票功能 UI 与逻辑 ----------------
+    def show_vote_dialog(self):
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLineEdit, QTextEdit, QDialogButtonBox, QCheckBox,
+                                     QPushButton, QHBoxLayout, QComboBox, QInputDialog, QMessageBox, QLabel)
+        if self.vote_manager.is_running:
+            QMessageBox.information(self, "提示", "当前已有投票在进行中，请先结束或等待结束。")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("创建投票")
+        main_layout = QVBoxLayout(dlg)
+        main_layout.setSpacing(10)
+
+        # 预设选择行
+        preset_row = QHBoxLayout()
+        preset_combo = QComboBox()
+        preset_combo.setEditable(False)
+        preset_combo.setMinimumWidth(180)
+
+        def refresh_presets(select_name: str | None = None):
+            preset_combo.clear()
+            presets = self.vote_manager.list_presets()
+            bases = [os.path.basename(p) for p in presets]
+            for b in bases:
+                preset_combo.addItem(b)
+            if select_name and select_name in bases:
+                preset_combo.setCurrentText(select_name)
+
+        refresh_presets()
+
+        load_btn = QPushButton("载入")
+        del_btn = QPushButton("删除")
+        save_btn = QPushButton("保存为预设")
+        for b in (load_btn, del_btn, save_btn):
+            b.setMinimumHeight(30)
+
+        preset_row.addWidget(QLabel("预设:"))
+        preset_row.addWidget(preset_combo, 1)
+        preset_row.addWidget(load_btn)
+        preset_row.addWidget(del_btn)
+        preset_row.addWidget(save_btn)
+        main_layout.addLayout(preset_row)
+
+        # 标题与选项
+        title_edit = QLineEdit(); title_edit.setPlaceholderText("输入投票标题")
+        options_edit = QTextEdit(); options_edit.setPlaceholderText("每行一个选项")
+        main_layout.addWidget(QLabel("标题:"))
+        main_layout.addWidget(title_edit)
+        main_layout.addWidget(QLabel("选项(一行一个):"))
+        main_layout.addWidget(options_edit)
+
+        # 自动结束设置
+        auto_end_checkbox = QCheckBox("启用定时结束 (秒)")
+        auto_end_input = QLineEdit(); auto_end_input.setPlaceholderText("如 60 表示 60 秒后自动结束")
+        auto_end_input.setEnabled(False)
+        auto_end_checkbox.toggled.connect(lambda s: auto_end_input.setEnabled(s))
+        main_layout.addWidget(auto_end_checkbox)
+        main_layout.addWidget(auto_end_input)
+
+        # 预设加载功能
+        def load_current_preset():
+            name = preset_combo.currentText().strip()
+            if not name:
+                return
+            path = os.path.join('vote_presets', name)
+            cfg0 = self.vote_manager.load_preset(path)
+            if not cfg0:
+                QMessageBox.warning(dlg, "错误", "预设加载失败")
+                return
+            title_edit.setText(cfg0.title)
+            options_edit.setPlainText("\n".join(cfg0.options))
+            if cfg0.auto_end_seconds and cfg0.auto_end_seconds > 0:
+                auto_end_checkbox.setChecked(True)
+                auto_end_input.setText(str(cfg0.auto_end_seconds))
+            else:
+                auto_end_checkbox.setChecked(False)
+                auto_end_input.clear()
+
+        load_btn.clicked.connect(load_current_preset)
+        preset_combo.currentIndexChanged.connect(lambda *_: load_current_preset())
+
+        # 删除预设
+        def delete_current_preset():
+            name = preset_combo.currentText().strip()
+            if not name:
+                return
+            ret = QMessageBox.question(dlg, "确认", f"确定删除预设 '{name}' ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+            if self.vote_manager.delete_preset(name):
+                refresh_presets()
+            else:
+                QMessageBox.warning(dlg, "失败", "删除预设失败")
+
+        del_btn.clicked.connect(delete_current_preset)
+
+        # 保存为预设
+        def save_as_preset():
+            title_val = title_edit.text().strip() or "未命名投票"
+            name, ok = QInputDialog.getText(dlg, "保存预设", "预设名称:", text=title_val)
+            if not ok or not name.strip():
+                return
+            # 构造临时 config
+            lines = [ln.strip() for ln in options_edit.toPlainText().splitlines() if ln.strip()]
+            if not lines:
+                QMessageBox.warning(dlg, "错误", "至少需要一个选项才能保存预设")
+                return
+            from vote import VoteConfig
+            auto_seconds = None
+            if auto_end_checkbox.isChecked():
+                try:
+                    sec = int(auto_end_input.text().strip())
+                    if sec > 0:
+                        auto_seconds = sec
+                except ValueError:
+                    pass
+            cfg_temp = VoteConfig(title=title_val, options=lines, auto_end_seconds=auto_seconds)
+            try:
+                self.vote_manager.save_preset(cfg_temp, file_name=name, overwrite=True)
+                refresh_presets(select_name=f"{name if name.lower().endswith('.json') else name + '.json'}")
+            except Exception as e:
+                QMessageBox.warning(dlg, "失败", f"保存预设失败: {e}")
+
+        save_btn.clicked.connect(save_as_preset)
+
+        # 确认/取消按钮
+        btns = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        main_layout.addWidget(btns)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # 创建投票
+        title = title_edit.text().strip() or "未命名投票"
+        options = [line.strip() for line in options_edit.toPlainText().splitlines() if line.strip()]
+        if not options:
+            QMessageBox.warning(self, "错误", "至少需要一个选项")
+            return
+        from vote import VoteConfig
+        auto_end_ts = None
+        auto_seconds = None
+        if auto_end_checkbox.isChecked():
+            try:
+                sec = int(auto_end_input.text().strip())
+                if sec > 0:
+                    import time as _t
+                    auto_seconds = sec
+                    auto_end_ts = int(_t.time()) + sec
+            except ValueError:
+                pass
+        cfg = VoteConfig(title=title, options=options, auto_end_timestamp=auto_end_ts, auto_end_seconds=auto_seconds)
+        if self.vote_manager.start_vote(cfg):
+            if not self.vote_overlay:
+                self.vote_overlay = VoteOverlayWindow(self.vote_manager)
+                if hasattr(self.vote_overlay, 'voteEnded'):
+                    try:
+                        self.vote_overlay.voteEnded.connect(self._on_overlay_vote_ended)
+                    except Exception:
+                        pass
+                if hasattr(self.vote_overlay, 'visibilityChanged'):
+                    try:
+                        self.vote_overlay.visibilityChanged.connect(self._on_overlay_visibility_changed)
+                    except Exception:
+                        pass
+            self.vote_overlay.show(); self.vote_overlay.raise_(); self.vote_overlay.activateWindow()
+            self.start_vote_btn.setEnabled(False)
+            self.end_vote_btn.setEnabled(True)
+            self.toggle_vote_overlay_btn.setEnabled(True)
+            self.toggle_vote_overlay_btn.setText("🖥️ 隐藏投票窗口")
+            gui_logger.info("投票创建成功")
+        else:
+            QMessageBox.warning(self, "失败", "无法开始投票")
+
+    def end_current_vote(self):
+        res = self.vote_manager.end_vote()
+        if not res:
+            QMessageBox.information(self, "提示", "当前没有进行中的投票")
+            return
+        summary_lines = [f"{idx}. {res.config.options[idx-1]} - {res.counts.get(idx,0)}票" for idx in range(1, len(res.config.options)+1)]
+        summary = "\n".join(summary_lines)
+        gui_logger.info("投票结束结果", summary)
+        self.start_vote_btn.setEnabled(True)
+        self.end_vote_btn.setEnabled(False)
+        # 直接在悬浮窗展示最终结果（不弹出阻塞对话框）
+        if self.vote_overlay and self.vote_overlay.isVisible():
+            # 调用悬浮窗内部结果展示
+            try:
+                if hasattr(self.vote_overlay, '_show_final_result'):
+                    self.vote_overlay._show_final_result()
+            except Exception:
+                pass
+        # 更新按钮状态
+        self.toggle_vote_overlay_btn.setEnabled(False)
+        self.toggle_vote_overlay_btn.setText("🖥️ 显示投票窗口")
+        self.view_vote_result_btn.setEnabled(True)
+
+    def _on_overlay_vote_ended(self):
+        """悬浮窗结束投票后同步主窗口按钮状态"""
+        # 避免重复操作：仅当 vote_manager 已经不在运行时更新
+        if not self.vote_manager.is_running:
+            self.start_vote_btn.setEnabled(True)
+            self.end_vote_btn.setEnabled(False)
+            self.toggle_vote_overlay_btn.setEnabled(False)
+            self.toggle_vote_overlay_btn.setText("🖥️ 显示投票窗口")
+            self.view_vote_result_btn.setEnabled(True)
+
+    def _on_overlay_visibility_changed(self, visible: bool):
+        # 投票进行中时，切换按钮文本
+        if self.vote_manager.is_running:
+            self.toggle_vote_overlay_btn.setText("🖥️ 隐藏投票窗口" if visible else "🖥️ 显示投票窗口")
+        else:
+            # 已结束时，保持“显示”文本，禁用状态不改变
+            if not visible:
+                self.toggle_vote_overlay_btn.setText("🖥️ 显示投票窗口")
+    # 废弃分离的预设载入窗口（整合到创建投票对话框）
+
+    def toggle_vote_overlay(self):
+        if not self.vote_overlay:
+            return
+        if self.vote_overlay.isVisible():
+            self.vote_overlay.hide()
+            self.toggle_vote_overlay_btn.setText("🖥️ 显示投票窗口")
+        else:
+            self.vote_overlay.show(); self.vote_overlay.raise_(); self.vote_overlay.activateWindow()
+            self.toggle_vote_overlay_btn.setText("🖥️ 隐藏投票窗口")
+
+    def view_last_vote_result(self):
+        res = self.vote_manager.current_result
+        if not res or self.vote_manager.is_running:
+            QMessageBox.information(self, "提示", "暂无已结束的投票结果")
+            return
+        summary_lines = [f"{idx}. {res.config.options[idx-1]} - {res.counts.get(idx,0)}票" for idx in range(1, len(res.config.options)+1)]
+        summary = "\n".join(summary_lines)
+        QMessageBox.information(self, "最近一次投票结果", summary)
     
     def show_login_dialog(self):
         """显示登录对话框"""
@@ -454,7 +733,18 @@ class BilibiliDanmakuMonitor(QMainWindow):
                 if self.queue_window:
                     self.queue_window.process_danmaku_queue(username)
             
-            # 检查是否为插队弹幕（关键词匹配）
+            # 如果有进行中的投票，尝试解析投票数字（弹幕优先走投票再走队列逻辑）
+            if message_type == Constants.MESSAGE_TYPE_DANMAKU and self.vote_manager.is_running:
+                uid = message_info.get('uid')
+                raw_text = message_info.get('message', '')
+                if isinstance(uid, int):
+                    valid, opt = self.vote_manager.handle_vote_danmaku(uid, raw_text)
+                    if valid and self.vote_overlay:
+                        # 刷新悬浮窗显示
+                        self.vote_overlay.refresh()
+                # 继续执行后续排队关键词逻辑（数字投票不影响）
+
+            # 检查是否为排队弹幕（关键词匹配）
             elif (message_type == Constants.MESSAGE_TYPE_DANMAKU and 
                   Constants.CUTLINE_KEYWORD in message_info.get('message', '')):
                 if self.queue_window:

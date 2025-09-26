@@ -7,8 +7,8 @@
 
 # 应用程序基本信息
 APP_NAME = "子轩专属排队工具"
-APP_VERSION = "1.8fixed"
-APP_VERSION_FULL = "1.8fixed"  # 用于发布标签
+APP_VERSION = "1.9.0"
+APP_VERSION_FULL = "1.9.0"  # 新增投票系统
 APP_AUTHOR = "BiliBili-XiaYun"
 APP_AUTHOR_EMAIL = "mytianyi0712@outlook.com"
 APP_DESCRIPTION = "B站直播弹幕排队管理系统 - 基于PyQt6的直播间弹幕监控和队列管理工具"

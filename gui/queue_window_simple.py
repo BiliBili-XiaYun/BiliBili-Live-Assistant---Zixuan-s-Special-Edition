@@ -669,6 +669,9 @@ class SimpleQueueManagerWindow(QMainWindow):
     
     def start_queue(self):
         """开始排队"""
+        # 开始前做一次规范化，确保继续排队时序号正确
+        if hasattr(self.queue_manager, "normalize_queues"):
+            self.queue_manager.normalize_queues()
         self.queue_manager.start_queue()
         self.refresh_ui()
         self.log_widget.log_system_event("开始排队服务")
@@ -744,8 +747,11 @@ class SimpleQueueManagerWindow(QMainWindow):
             # 清除抽奖结果显示
             self.reset_lottery_display()
             
-            # 更新界面
+            # 规范化并更新界面
+            if hasattr(self.queue_manager, "normalize_queues"):
+                self.queue_manager.normalize_queues()
             self.update_queue_table()
+            self.update_cutline_table()
             self.update_boarding_table()
             self.update_button_states()
             

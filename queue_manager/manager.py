@@ -269,8 +269,10 @@ class QueueManager:
 
     def start_queue(self) -> None:
         """开始排队"""
+        # 开始新一轮排队时，不再清空 user_queued，避免与现有 queue_list 不一致
+        # 而是统一地对现有队列进行一次规范化（去重 + 依序号排序 + 同步集合）
+        self.normalize_queues()
         self.queue_started = True
-        self.user_queued.clear()
         self.queue_logger.info("排队服务已开始", "等待用户发送排队弹幕")
     
     def stop_queue(self) -> None:
@@ -364,14 +366,14 @@ class QueueManager:
         
         # 在名单中查找最小序号的匹配项
         matched_item = self._find_available_item(username)
-        
+
         if matched_item:
-            # 添加到排队队列            matched_item.in_queue = True
+            # 添加到排队队列
+            matched_item.in_queue = True
             self.queue_list.append(matched_item)
             self.user_queued.add(username)
-              # 按序号排序
+            # 按序号排序（保持整体有序）
             self.queue_list.sort(key=lambda x: x.index)
-            
             self.queue_logger.info("用户加入排队", f"用户 {username} (序号: {matched_item.index})")
             return True
         else:
@@ -610,6 +612,8 @@ class QueueManager:
                 self.name_list = [self._dict_to_item(item_dict) 
                                 for item_dict in state_data['name_list']]
             
+            # 加载完成后规范化，修复可能的重复与乱序
+            self.normalize_queues()
             self.queue_logger.operation_complete("队列状态加载", "成功")
             return True
             
@@ -661,6 +665,8 @@ class QueueManager:
             
             # 更新队列中的项目引用，确保它们指向新的名单项目
             self._update_queue_references()
+            # 重新排序并去重，保持显示与逻辑一致
+            self.normalize_queues()
             
             self.queue_logger.operation_complete("重新加载名单", f"加载 {len(self.name_list)} 个项目，保留现有队列")
             return True
@@ -681,6 +687,55 @@ class QueueManager:
                 new_item.in_queue = True
                 new_item.is_cutline = queue_item.is_cutline
                 self.queue_list[i] = new_item
+
+    def _sort_queues(self):
+        """仅对各队列进行排序（不改变集合与标志）。"""
+        try:
+            # 按序号排序排队队列
+            self.queue_list.sort(key=lambda x: x.index)
+            # 按序号排序插队队列
+            self.cutline_list.sort(key=lambda x: x.index)
+        except Exception as e:
+            self.queue_logger.debug("排序队列失败", str(e))
+
+    def normalize_queues(self):
+        """
+        规范化当前队列状态：
+        - 去重：同一用户名在排队/插队各自队列中仅保留一次（保留首次出现）
+        - 同步集合：用队列内容重建 user_queued / user_cutline
+        - 排序：按 index 升序排序 queue_list / cutline_list
+        说明：不会清空列表，保持现有队列但修复不一致与乱序。
+        """
+        # 处理排队队列的去重与同步
+        seen_queue: Set[str] = set()
+        new_queue_list: List[QueueItem] = []
+        for item in self.queue_list:
+            if item.name in seen_queue:
+                # 重复条目，跳过
+                self.queue_logger.debug("移除重复排队条目", item.name)
+                continue
+            seen_queue.add(item.name)
+            item.in_queue = True
+            new_queue_list.append(item)
+        self.queue_list = new_queue_list
+        self.user_queued = set(seen_queue)
+
+        # 处理插队队列的去重与同步
+        seen_cutline: Set[str] = set()
+        new_cutline_list: List[QueueItem] = []
+        for item in self.cutline_list:
+            if item.name in seen_cutline:
+                self.queue_logger.debug("移除重复插队条目", item.name)
+                continue
+            seen_cutline.add(item.name)
+            item.is_cutline = True
+            item.in_queue = True  # 插队项视为队列中的特殊条目
+            new_cutline_list.append(item)
+        self.cutline_list = new_cutline_list
+        self.user_cutline = set(seen_cutline)
+
+        # 统一排序
+        self._sort_queues()
 
     def log_count_change(self, name: str, old_count: int, new_count: int, reason: str):
         """
