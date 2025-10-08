@@ -60,6 +60,8 @@ def configure_third_party_logging():
 
 def main():
     """主函数 - 优化启动速度"""
+    splash = None
+    tts_manager = None
     try:
         # 设置环境
         setup_environment()
@@ -86,22 +88,66 @@ def main():
         app.setOrganizationName(ORGANIZATION_NAME)
         
         # 设置应用程序图标
-        from config import Constants
+        from config import Constants, app_config
         from PyQt6.QtGui import QIcon
         icon_path = Constants.get_icon_path(128)
         if icon_path:
             app.setWindowIcon(QIcon(icon_path))
             main_logger.debug("应用程序图标设置成功", f"路径: {icon_path}")
+
+        # 创建加载界面
+        try:
+            from gui.loading_splash import LoadingSplashScreen
+
+            splash = LoadingSplashScreen()
+            splash.set_title("正在启动排队工具…")
+            splash.append_message("初始化应用所需组件…")
+            splash.show()
+            app.processEvents()
+        except Exception as splash_exc:  # pragma: no cover - GUI 初始化失败时
+            splash = None
+            main_logger.warning("加载界面初始化失败", repr(splash_exc))
+
+        def splash_log(message: str) -> None:
+            if message:
+                main_logger.debug("启动进度", message)
+            if splash is not None and message:
+                splash.append_message(message)
+                app.processEvents()
+
+        # 初始化并预加载 TTS
+        try:
+            main_logger.operation_start("初始化语音引擎")
+            from utils.tts import TTSManager
+
+            tts_manager = TTSManager(settings={"tts": app_config.get("tts", {})})
+            splash_log("准备 Kokoro 语音模型…")
+            preload_ok = tts_manager.preload_kokoro(status_callback=splash_log)
+            if preload_ok:
+                splash_log("Kokoro 语音模型预加载完成")
+                main_logger.operation_complete("初始化语音引擎", "Kokoro 预加载成功")
+            else:
+                splash_log("Kokoro 预加载未完成，将在首次使用时加载")
+                main_logger.warning("Kokoro 预加载未完成", "将按需延迟加载")
+        except Exception as tts_exc:
+            main_logger.warning("语音引擎初始化失败", repr(tts_exc))
+            splash_log(f"语音引擎初始化失败：{tts_exc}")
+            tts_manager = None
         
         # 延迟导入主窗口模块
         main_logger.operation_start("加载主窗口模块")
+        splash_log("加载主窗口模块…")
         from gui.main_window import BilibiliDanmakuMonitor
         
         # 创建主窗口
         main_logger.operation_start("创建主窗口")
-        window = BilibiliDanmakuMonitor()
+        splash_log("创建主窗口界面…")
+        window = BilibiliDanmakuMonitor(tts_manager=tts_manager)
         window.show()
         main_logger.operation_complete("主窗口创建", "窗口已显示")
+        if splash is not None:
+            splash.append_message("启动完成，正在进入主界面…")
+            splash.finish(window)
         
         # 运行应用程序
         main_logger.info("应用程序启动成功，进入主循环")
@@ -115,6 +161,11 @@ def main():
             main_logger.error("导入模块失败", str(e))
         except:
             print(error_msg)  # 日志系统不可用时的后备方案
+        try:
+            if splash is not None:
+                splash.close()
+        except Exception:
+            pass
         try:
             from PyQt6.QtWidgets import QApplication, QMessageBox
             app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()
@@ -131,6 +182,11 @@ def main():
             main_logger.error("程序启动失败", str(e), exc_info=True)
         except:
             print(error_msg)  # 日志系统不可用时的后备方案
+        try:
+            if splash is not None:
+                splash.close()
+        except Exception:
+            pass
         try:
             import traceback
             traceback.print_exc()

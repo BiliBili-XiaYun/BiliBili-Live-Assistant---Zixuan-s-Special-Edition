@@ -7,12 +7,20 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QGroupBox, QMessageBox, 
                              QTabWidget, QWidget, QCheckBox, QSpinBox,
-                             QLineEdit, QFileDialog)
+                             QLineEdit, QFileDialog, QFrame)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from config import app_config
 from utils import gui_logger
+
+try:
+    from utils.kokoro_tts import last_import_error as _kokoro_last_import_error
+except Exception:
+    def _kokoro_last_import_error():
+        return None
+
+last_import_error = _kokoro_last_import_error
 
 
 class SettingsDialog(QDialog):
@@ -52,6 +60,8 @@ class SettingsDialog(QDialog):
         
         # 高级设置选项卡
         self.create_advanced_tab()
+        # TTS设置选项卡
+        self.create_tts_tab()
         
         layout.addWidget(self.tab_widget)
         
@@ -162,6 +172,24 @@ class SettingsDialog(QDialog):
         
         notification_group.setLayout(notification_layout)
         layout.addWidget(notification_group)
+
+        # 关键词设置
+        keywords_group = QGroupBox("关键词设置")
+        kw_layout = QVBoxLayout()
+        from PyQt6.QtWidgets import QFormLayout
+        form = QFormLayout()
+        self.queue_keyword_edit = QLineEdit()
+        self.boarding_keyword_edit = QLineEdit()
+        self.cutline_keyword_edit = QLineEdit()
+        form.addRow(QLabel("排队关键词:"), self.queue_keyword_edit)
+        form.addRow(QLabel("上车关键词:"), self.boarding_keyword_edit)
+        form.addRow(QLabel("插队关键词:"), self.cutline_keyword_edit)
+        kw_layout.addLayout(form)
+        tips = QLabel("提示: 修改后点击底部‘应用’保存，重载配置会自动生效；默认分别为 ‘排队’、‘刑具排队’、‘我要插队’。")
+        tips.setWordWrap(True)
+        kw_layout.addWidget(tips)
+        keywords_group.setLayout(kw_layout)
+        layout.addWidget(keywords_group)
         
         layout.addStretch()
         tab.setLayout(layout)
@@ -206,6 +234,102 @@ class SettingsDialog(QDialog):
         layout.addStretch()
         tab.setLayout(layout)
         self.tab_widget.addTab(tab, "高级设置")
+
+    def create_tts_tab(self):
+        from PyQt6.QtWidgets import QFormLayout, QSlider, QScrollArea
+        # 使用可滚动容器，避免控件过多时被挤压
+        content = QWidget()
+        layout = QVBoxLayout(content)
+
+        # 开关与基础参数
+        base_group = QGroupBox("基础设置")
+        base_layout = QVBoxLayout()
+        self.tts_enable = QCheckBox("启用TTS播报")
+        base_layout.addWidget(self.tts_enable)
+
+        # 引擎/语速/音量
+        form = QFormLayout()
+        self.tts_engine_combo = QComboBox()
+        self.tts_engine_combo.addItem("Kokoro 离线 (kokoro)", userData="kokoro")
+        self.tts_engine_combo.addItem("Edge 在线 (edge-tts)", userData="edge-tts")
+        self.tts_engine_combo.addItem("本地 (pyttsx3)", userData="pyttsx3")
+        form.addRow(QLabel("引擎:"), self.tts_engine_combo)
+        self.tts_rate = QSpinBox(); self.tts_rate.setRange(80, 300); self.tts_rate.setSingleStep(10)
+        from PyQt6.QtWidgets import QDoubleSpinBox as _QDB
+        self.tts_volume = _QDB(); self.tts_volume.setRange(0.0, 1.0); self.tts_volume.setSingleStep(0.1)
+        form.addRow(QLabel("语速:"), self.tts_rate)
+        form.addRow(QLabel("音量:"), self.tts_volume)
+        # 已移除 Kokoro 专用参数
+
+        # 语音选择 + 刷新
+        self.tts_voice_combo = QComboBox()
+        try:
+            self.tts_voice_combo.addItem("请点击‘刷新语音列表’加载可用语音", userData="")
+        except Exception:
+            pass
+        form.addRow(QLabel("语音:"), self.tts_voice_combo)
+        self.tts_refresh_voices_btn = QPushButton("刷新语音列表")
+        form.addRow(QLabel(""), self.tts_refresh_voices_btn)
+        # 试听按钮（由主窗口接线触发试听）
+        self.tts_preview_btn = QPushButton("试听当前设置")
+        form.addRow(QLabel(""), self.tts_preview_btn)
+
+        # 已移除 Piper 相关参数
+        base_layout.addLayout(form)
+        base_group.setLayout(base_layout)
+        layout.addWidget(base_group)
+
+        # 事件开关
+        event_group = QGroupBox("事件播报开关")
+        ev_layout = QVBoxLayout()
+        self.tts_enable_danmaku = QCheckBox("弹幕")
+        self.tts_enable_gift = QCheckBox("礼物")
+        self.tts_enable_guard = QCheckBox("上舰")
+        self.tts_enable_sc = QCheckBox("醒目留言")
+        for w in [self.tts_enable_danmaku, self.tts_enable_gift, self.tts_enable_guard,
+                  self.tts_enable_sc]:
+            ev_layout.addWidget(w)
+        event_group.setLayout(ev_layout)
+        layout.addWidget(event_group)
+
+        # 模板设置
+        tpl_group = QGroupBox("自定义模板")
+        tpl_layout = QFormLayout()
+        self.tpl_gift = QLineEdit()
+        self.tpl_guard = QLineEdit()
+        self.tpl_sc = QLineEdit()
+        self.tpl_danmaku = QLineEdit()
+        tpl_layout.addRow("礼物:", self.tpl_gift)
+        tpl_layout.addRow("上舰:", self.tpl_guard)
+        tpl_layout.addRow("醒目留言:", self.tpl_sc)
+        tpl_layout.addRow("弹幕:", self.tpl_danmaku)
+        help_label = QLabel("可用占位符: {username}, {message}, {giftname}, {time}, {guardname}")
+        help_label.setWordWrap(True)
+        tpl_group.setLayout(tpl_layout)
+        layout.addWidget(tpl_group)
+        layout.addWidget(help_label)
+
+        layout.addStretch()
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(content)
+        self.tab_widget.addTab(scroll, "TTS设置")
+
+    # 由主窗口注入可用语音列表
+    def populate_tts_voices(self, voices: dict[str, str], current_id: str = ""):
+        try:
+            self.tts_voice_combo.clear()
+            # voices: id -> name
+            for vid, name in voices.items():
+                self.tts_voice_combo.addItem(name or vid, userData=vid)
+            # 选择当前
+            if current_id:
+                idx = self.tts_voice_combo.findData(current_id)
+                if idx >= 0:
+                    self.tts_voice_combo.setCurrentIndex(idx)
+        except Exception:
+            pass
     
     def load_current_settings(self):
         """加载当前设置"""
@@ -223,10 +347,37 @@ class SettingsDialog(QDialog):
             self.auto_connect.setChecked(app_config.get("general.auto_connect", True))
             self.minimize_to_tray.setChecked(app_config.get("general.minimize_to_tray", False))
             self.enable_notifications.setChecked(app_config.get("general.enable_notifications", True))
+            # 关键词
+            self.queue_keyword_edit.setText(app_config.get("keywords.queue", "排队"))
+            self.boarding_keyword_edit.setText(app_config.get("keywords.boarding", "刑具排队"))
+            self.cutline_keyword_edit.setText(app_config.get("keywords.cutline", "我要插队"))
             
             # 高级设置
             self.file_monitor_interval.setValue(app_config.get("advanced.file_monitor_interval", 5))
             self.enable_debug_mode.setChecked(app_config.get("advanced.debug_mode", False))
+
+            # TTS设置
+            t = app_config.get("tts", {}) or {}
+            self.tts_enable.setChecked(t.get("enable", False))
+            # 引擎
+            eng = t.get("engine", "kokoro")
+            idx = self.tts_engine_combo.findData(eng)
+            if idx >= 0:
+                self.tts_engine_combo.setCurrentIndex(idx)
+            self.tts_rate.setValue(int(t.get("rate", 180)))
+            self.tts_volume.setValue(float(t.get("volume", 1.0)))
+            # 无 Kokoro 参数
+            # 语音列表需要运行期获取，由主窗口注入或延迟填充，这里只设置占位
+            self._pending_voice_id = t.get("voice_id", "")
+            self.tts_enable_danmaku.setChecked(bool(t.get("enable_danmaku", False)))
+            self.tts_enable_gift.setChecked(bool(t.get("enable_gift", True)))
+            self.tts_enable_guard.setChecked(bool(t.get("enable_guard", True)))
+            self.tts_enable_sc.setChecked(bool(t.get("enable_super_chat", True)))
+            tpl = t.get("templates", {}) or {}
+            self.tpl_gift.setText(tpl.get("gift", ""))
+            self.tpl_guard.setText(tpl.get("guard", ""))
+            self.tpl_sc.setText(tpl.get("super_chat", ""))
+            self.tpl_danmaku.setText(tpl.get("danmaku", ""))
             
         except Exception as e:
             gui_logger.error("加载设置失败", str(e))
@@ -247,6 +398,40 @@ class SettingsDialog(QDialog):
             # 保存高级设置
             app_config.set("advanced.file_monitor_interval", self.file_monitor_interval.value())
             app_config.set("advanced.debug_mode", self.enable_debug_mode.isChecked())
+            # 保存 TTS 设置
+            t = app_config.get("tts", {}) or {}
+            t.update({
+                "enable": self.tts_enable.isChecked(),
+                "engine": self.tts_engine_combo.currentData() or "kokoro",
+                "rate": self.tts_rate.value(),
+                "volume": float(self.tts_volume.value()),
+                "voice_id": self.tts_voice_combo.currentData() or self.tts_voice_combo.currentText(),
+                "enable_danmaku": self.tts_enable_danmaku.isChecked(),
+                "enable_gift": self.tts_enable_gift.isChecked(),
+                "enable_guard": self.tts_enable_guard.isChecked(),
+                "enable_super_chat": self.tts_enable_sc.isChecked(),
+                "templates": {
+                    "gift": self.tpl_gift.text(),
+                    "guard": self.tpl_guard.text(),
+                    "super_chat": self.tpl_sc.text(),
+                    "danmaku": self.tpl_danmaku.text(),
+                }
+            })
+            app_config.set("tts", t)
+            # 保存关键词设置
+            app_config.set("keywords.queue", self.queue_keyword_edit.text().strip() or "排队")
+            app_config.set("keywords.boarding", self.boarding_keyword_edit.text().strip() or "刑具排队")
+            app_config.set("keywords.cutline", self.cutline_keyword_edit.text().strip() or "我要插队")
+            # 立即落盘
+            app_config.save_config()
+            # 并同步至运行时常量（无需重启）
+            try:
+                from config import Constants as _C
+                _C.QUEUE_KEYWORD = app_config.get("keywords.queue", _C.QUEUE_KEYWORD)
+                _C.BOARDING_KEYWORD = app_config.get("keywords.boarding", _C.BOARDING_KEYWORD)
+                _C.CUTLINE_KEYWORD = app_config.get("keywords.cutline", _C.CUTLINE_KEYWORD)
+            except Exception:
+                pass
             
             # 应用日志级别设置
             self.apply_log_level_change()

@@ -69,6 +69,28 @@ class Config:
             "enable_auto_backup": True,  # 启用自动备份
             "name_list_file": ""  # 名单文件路径（绝对路径，为空则跳过加载）
         },
+        "keywords": {
+            "queue": "排队",
+            "boarding": "刑具排队",
+            "cutline": "我要插队"
+        },
+        "tts": {
+            "enable": False,
+            "engine": "kokoro",  # kokoro | edge-tts | pyttsx3
+            "rate": 180,
+            "volume": 1.0,
+            "voice_id": "zf_001",  # Kokoro 默认声音
+            "enable_danmaku": False,
+            "enable_gift": True,
+            "enable_guard": True,
+            "enable_super_chat": True,
+            "templates": {
+                "gift": "感谢 {username} 送出的 {giftname}。",
+                "guard": "感谢 {username} 开通舰长 {time} 个月。",
+                "super_chat": "感谢 {username} 的醒目留言。",
+                "danmaku": "{username} 说：{message}"
+            }
+        },
         "ui": {
             "theme": "default",  # 主题
             "language": "zh_CN",  # 语言
@@ -100,6 +122,14 @@ class Config:
 
                 logger = get_main_logger()
                 logger.operation_complete("配置加载", f"从 {self.config_file} 加载")
+                # 同步关键词到常量，便于运行时直接使用
+                try:
+                    from config import Constants as _C
+                    _C.QUEUE_KEYWORD = self.get("keywords.queue", _C.QUEUE_KEYWORD)
+                    _C.BOARDING_KEYWORD = self.get("keywords.boarding", _C.BOARDING_KEYWORD)
+                    _C.CUTLINE_KEYWORD = self.get("keywords.cutline", _C.CUTLINE_KEYWORD)
+                except Exception:
+                    pass
             else:
                 print("配置文件不存在，使用默认配置")
                 self.save_config()  # 创建默认配置文件
@@ -153,6 +183,14 @@ class Config:
 
                 logger = get_main_logger()
                 logger.operation_complete("配置重新加载", f"从 {self.config_file} 重新加载")
+                # 同步关键词到常量
+                try:
+                    from config import Constants as _C
+                    _C.QUEUE_KEYWORD = self.get("keywords.queue", _C.QUEUE_KEYWORD)
+                    _C.BOARDING_KEYWORD = self.get("keywords.boarding", _C.BOARDING_KEYWORD)
+                    _C.CUTLINE_KEYWORD = self.get("keywords.cutline", _C.CUTLINE_KEYWORD)
+                except Exception:
+                    pass
             else:
                 print("配置文件不存在，保持当前配置")
         except Exception as e:
@@ -292,8 +330,8 @@ class Constants:
     MESSAGE_TYPE_SUPER_CHAT = 'super_chat'
       # 队列相关
     QUEUE_KEYWORD = '排队'
-    BOARDING_KEYWORD = '上车'  # 上车关键词
-    CUTLINE_KEYWORD = '插队'  # 插队关键词
+    BOARDING_KEYWORD = '刑具排队'  # 上车关键词（默认值可在设置中自定义）
+    CUTLINE_KEYWORD = '我要插队'  # 插队关键词（默认值可在设置中自定义）
     CUTLINE_COST = 2  # 插队消耗次数
     NORMAL_COST = 1   # 正常排队消耗次数
     

@@ -28,6 +28,18 @@ from gui.queue_window_simple import SimpleQueueManagerWindow
 from gui.name_list_editor import NameListEditor
 from queue_manager import QueueManager
 from utils import extract_room_id, is_test_mode_input, gui_logger
+
+try:
+    from utils.kokoro_tts import (
+        KokoroUnavailableError,
+        last_import_error as kokoro_last_import_error,
+    )
+except Exception:
+    KokoroUnavailableError = RuntimeError  # type: ignore[assignment]
+
+    def kokoro_last_import_error():
+        return None
+from utils.tts import TTSManager
 from config import Constants, app_config
 from vote import VoteManager
 from vote.vote_overlay import VoteOverlayWindow
@@ -39,36 +51,52 @@ if not PLYER_AVAILABLE:
 
 class BilibiliDanmakuMonitor(QMainWindow):
     """B站弹幕监控主窗口"""
-    def __init__(self):
+
+    def __init__(self, tts_manager=None):
         """初始化主窗口"""
         super().__init__()
-          # 登录管理器
+
+        # 登录管理器
         self.login_manager = LoginManager()
-        
+
         # 队列管理器 - 独立于排队窗口，用于处理舰长礼物等事件
         self.queue_manager = QueueManager()
+
         # 投票管理
         self.vote_manager = VoteManager()
         self.vote_overlay: VoteOverlayWindow | None = None
-        
+
+        # TTS 管理
+        if tts_manager is not None:
+            self.tts = tts_manager
+            try:
+                self.tts.update_settings({"tts": app_config.get("tts", {})})
+            except Exception as exc:
+                gui_logger.warning(f"更新注入的 TTS 设置失败: {exc}")
+        else:
+            self.tts = TTSManager(settings={"tts": app_config.get("tts", {})})
+
         # 监控线程
         self.monitor_thread = None
-          # 子窗口
+
+        # 子窗口引用
         self.queue_window = None
         self.name_list_editor = None
-          # 测试模式相关
+
+        # 测试模式相关
         self.is_test_mode = False
-        
+
         # 新舰长数据
         self.new_guard_data = []
         self.guard_csv_path = None
         self.last_guard_file_mtime = 0
-        
+
         # 初始化UI
         self.init_ui()
-        
+
         # 自动填入房号13355
-        self.room_input.setText("13355")        
+        self.room_input.setText("13355")
+
         # 加载保存的登录信息
         self.load_saved_login()
     
@@ -448,6 +476,23 @@ class BilibiliDanmakuMonitor(QMainWindow):
         btns.accepted.connect(dlg.accept)
         btns.rejected.connect(dlg.reject)
 
+        # 预填：上一次投票内容（记忆功能）
+        try:
+            last_cfg = app_config.get("vote.last_config", {}) or {}
+            if isinstance(last_cfg, dict) and (last_cfg.get("title") or last_cfg.get("options")):
+                if last_cfg.get("title"):
+                    title_edit.setText(str(last_cfg.get("title", "")))
+                opts = last_cfg.get("options", []) or []
+                if isinstance(opts, list) and opts:
+                    options_edit.setPlainText("\n".join([str(x) for x in opts if str(x).strip()]))
+                secs = last_cfg.get("auto_end_seconds")
+                if isinstance(secs, int) and secs > 0:
+                    auto_end_checkbox.setChecked(True)
+                    auto_end_input.setText(str(secs))
+                    auto_end_input.setEnabled(True)
+        except Exception:
+            pass
+
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -471,6 +516,16 @@ class BilibiliDanmakuMonitor(QMainWindow):
                 pass
         cfg = VoteConfig(title=title, options=options, auto_end_timestamp=auto_end_ts, auto_end_seconds=auto_seconds)
         if self.vote_manager.start_vote(cfg):
+            # 保存“上次投票内容”到配置（仅标题/选项/秒数，不存时间戳）
+            try:
+                app_config.set("vote.last_config", {
+                    "title": title,
+                    "options": options,
+                    "auto_end_seconds": auto_seconds if auto_seconds and auto_seconds > 0 else None,
+                })
+                app_config.save_config()
+            except Exception:
+                pass
             if not self.vote_overlay:
                 self.vote_overlay = VoteOverlayWindow(self.vote_manager)
                 if hasattr(self.vote_overlay, 'voteEnded'):
@@ -579,6 +634,127 @@ class BilibiliDanmakuMonitor(QMainWindow):
         from gui.settings_dialog import SettingsDialog
         
         dialog = SettingsDialog(self)
+        # 打开时优先使用缓存语音列表并选中已保存的 voice_id（不触发网络）
+        try:
+            saved_tts = app_config.get("tts", {}) or {}
+            # 按对话框当前选择的引擎，临时更新 TTSManager 引擎配置
+            tmp = dict(saved_tts)
+            tmp["engine"] = dialog.tts_engine_combo.currentData() or tmp.get("engine", "kokoro")
+            self.tts.update_settings({"tts": tmp})
+            cached = self.tts.get_cached_voices()
+            if cached:
+                dialog.populate_tts_voices(cached, current_id=saved_tts.get("voice_id", ""))
+        except Exception:
+            pass
+        # 接线：刷新语音列表（使用信号保证在主线程更新UI）
+        try:
+            from PyQt6.QtCore import QObject, pyqtSignal
+
+            class _VoiceRefresher(QObject):
+                voices_ready = pyqtSignal(dict)
+
+            refresher = _VoiceRefresher()
+
+            def _on_voices_ready(v: dict):
+                try:
+                    # 尽量保持已保存的 voice_id 选择；若无则保持当前
+                    saved = app_config.get("tts.voice_id", "") or app_config.get("tts", {}).get("voice_id", "")
+                    cur = saved or dialog.tts_voice_combo.currentData() or dialog.tts_voice_combo.currentText()
+                    dialog.populate_tts_voices(v, str(cur or ""))
+                    try:
+                        from utils import get_gui_logger
+                        get_gui_logger().info("刷新语音列表", f"共 {len(v)} 项")
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
+            refresher.voices_ready.connect(_on_voices_ready)
+
+            def _refresh_voices():
+                try:
+                    # 临时根据对话框选择的引擎刷新，避免必须先“应用”
+                    tmp = app_config.get("tts", {}) or {}
+                    tmp = dict(tmp)
+                    tmp["engine"] = dialog.tts_engine_combo.currentData() or tmp.get("engine", "kokoro")
+                    self.tts.update_settings({"tts": tmp})
+                    try:
+                        dialog.tts_voice_combo.clear()
+                        dialog.tts_voice_combo.addItem("正在刷新语音列表…", userData="")
+                    except Exception:
+                        pass
+
+                    # 后台线程执行网络请求
+                    import threading
+                    def _work():
+                        try:
+                            v = self.tts.list_voices()
+                        except KokoroUnavailableError as exc:
+                            detail = kokoro_last_import_error()
+                            msg = str(exc) or "KokoroTTS 未就绪"
+                            if detail and detail is not exc:
+                                msg = f"{msg}；{detail}"
+                            try:
+                                gui_logger.warning("KokoroTTS 未就绪", msg)
+                            except Exception:
+                                pass
+                            v = {
+                                'zh-CN-XiaoxiaoNeural': '晓晓(女) - zh-CN',
+                                'zh-CN-YunjianNeural': '云健(男) - zh-CN',
+                                'zh-CN-XiaoyiNeural': '晓依(女) - zh-CN',
+                                'zh-CN-YunxiNeural': '云希(男) - zh-CN',
+                            }
+                        except Exception as exc:
+                            try:
+                                gui_logger.warning("TTS 语音刷新失败", repr(exc))
+                            except Exception:
+                                pass
+                            v = {
+                                'zh-CN-XiaoxiaoNeural': '晓晓(女) - zh-CN',
+                                'zh-CN-YunjianNeural': '云健(男) - zh-CN',
+                                'zh-CN-XiaoyiNeural': '晓依(女) - zh-CN',
+                                'zh-CN-YunxiNeural': '云希(男) - zh-CN',
+                            }
+                        try:
+                            refresher.voices_ready.emit(v)
+                        except Exception:
+                            pass
+                    threading.Thread(target=_work, daemon=True).start()
+                except Exception:
+                    pass
+
+            dialog.tts_refresh_voices_btn.clicked.connect(_refresh_voices)
+        except Exception:
+            pass
+        # 接线：试听当前设置
+        try:
+            from PyQt6.QtWidgets import QMessageBox
+            def _preview_tts():
+                try:
+                    # 若未开启，则临时提示
+                    t_enabled = app_config.get("tts.enable", False)
+                    if not t_enabled:
+                        QMessageBox.information(self, "提示", "请先勾选‘启用TTS播报’，并点击‘应用’以确保试听正常播放。")
+                    # 使用当前对话框里的临时值更新到运行态
+                    tmp = app_config.get("tts", {}) or {}
+                    tmp = dict(tmp)
+                    # 试听时使用当前选择的引擎
+                    chosen_engine = dialog.tts_engine_combo.currentData() or "edge-tts"
+                    tmp.update({
+                        "enable": True,
+                        "engine": chosen_engine,
+                        "rate": dialog.tts_rate.value(),
+                        "volume": float(dialog.tts_volume.value()),
+                        "voice_id": dialog.tts_voice_combo.currentData() or dialog.tts_voice_combo.currentText(),
+                    })
+                    self.tts.update_settings({"tts": tmp})
+                    # 简短中文示例，避免过长
+                    self.tts.speak("这是TTS试听。欢迎使用本工具。")
+                except Exception:
+                    pass
+            dialog.tts_preview_btn.clicked.connect(_preview_tts)
+        except Exception:
+            pass
         dialog.settings_changed.connect(self.on_settings_changed)
         dialog.exec()
     
@@ -587,6 +763,11 @@ class BilibiliDanmakuMonitor(QMainWindow):
         gui_logger.info("设置已更新，正在应用变更...")
         # 这里可以根据需要重新加载配置或更新UI
         # 例如更新文件监控间隔等
+        # 同步TTS设置
+        try:
+            self.tts.update_settings({"tts": app_config.get("tts", {})})
+        except Exception:
+            pass
 
     def show_name_list_editor(self):
         """显示名单编辑器"""
@@ -754,7 +935,14 @@ class BilibiliDanmakuMonitor(QMainWindow):
             elif (message_type == Constants.MESSAGE_TYPE_DANMAKU and 
                   Constants.BOARDING_KEYWORD in message_info.get('message', '')):
                 if self.queue_window:
-                    self.queue_window.process_danmaku_boarding(username)            # 处理舰长礼物事件
+                    self.queue_window.process_danmaku_boarding(username)
+            elif message_type == Constants.MESSAGE_TYPE_DANMAKU:
+                # 普通弹幕 TTS（可在设置中单独开关），避免与排队/上车/插队重复
+                try:
+                    self.tts.speak_event('danmaku', {"username": username, "message": message_info.get('message', '')})
+                except Exception:
+                    pass
+            # 处理舰长礼物事件
             elif message_type == Constants.MESSAGE_TYPE_GUARD:
                 guard_level = message_info.get('guard_level', 0)
                 guard_months = message_info.get('num', 1)  # 购买的月份数量
@@ -782,6 +970,22 @@ class BilibiliDanmakuMonitor(QMainWindow):
                         month_text = f"{guard_months}个月" if guard_months > 1 else ""
                         special_msg = f"🎖️ <font color='#FFD700'><b>{username} 开通了{guard_months}个月{guard_name}，已自动获得 {total_reward} 次排队机会！</b></font>"
                         self.danmaku_display.append(special_msg)
+                        # TTS guard: {time} 为月份, {guardname}
+                        try:
+                            self.tts.speak_event('guard', {"username": username, "time": guard_months, "guardname": guard_name})
+                        except Exception:
+                            pass
+            elif message_type == Constants.MESSAGE_TYPE_GIFT:
+                try:
+                    gift_name = message_info.get('gift_name', '')
+                    self.tts.speak_event('gift', {"username": username, "giftname": gift_name})
+                except Exception:
+                    pass
+            elif message_type == Constants.MESSAGE_TYPE_SUPER_CHAT:
+                try:
+                    self.tts.speak_event('super_chat', {"username": username, "message": message_info.get('message', '')})
+                except Exception:
+                    pass
             
             # 格式化并显示消息
             formatted_msg = self.format_message(message_info)
@@ -832,6 +1036,14 @@ class BilibiliDanmakuMonitor(QMainWindow):
             return f"[{timestamp}] <font color='{Constants.COLOR_SUPER_CHAT}'>[醒目留言] {username} (¥{price}): {message}</font>"
         
         return ""
+
+    def closeEvent(self, event):
+        try:
+            if hasattr(self, 'tts') and self.tts:
+                self.tts.shutdown()
+        except Exception:
+            pass
+        super().closeEvent(event)
     
     def on_status_changed(self, status: str):
         """状态变化处理"""

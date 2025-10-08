@@ -13,6 +13,12 @@ mytianyi0712@outlook.com
 - 支持登录和访客模式连接
 - 自动重连机制
 - 弹幕关键词自动识别
+- 播报弹幕内容（支持自定义播报种类，以及播报内容）
+> {message}：弹幕内容;
+> {username}：用户名；
+> {giftname}：礼物名字;
+> {time}：舰长（包括提督、总督）的时长
+> {guardname}：舰长类礼物的具体类型
 
 ### 📝 排队管理
 - **排队功能**: 用户发送"排队"弹幕自动加入排队队列
@@ -25,7 +31,6 @@ mytianyi0712@outlook.com
 - 支持从排队队列中随机选择用户
 - 动画效果展示选择过程
 - 防重复中奖机制（最近10位中奖用户）
-- 程序2版本支持单人抽奖模式
 
 ### 🛡️ 舰长礼物监控
 - 自动检测舰长、提督、总督购买
@@ -78,27 +83,6 @@ pip install -r requirements.txt
 ### 运行程序
 ```bash
 python main.py
-```
-
-## 📁 项目结构
-
-```
-├── main.py                 # 程序入口
-├── gui/                    # GUI界面模块
-│   ├── main_window.py     # 主窗口
-│   ├── queue_window_simple.py  # 排队管理窗口
-│   ├── login_dialog.py    # 登录对话框
-│   └── ...
-├── bilibili/              # B站API相关
-│   ├── danmaku.py        # 弹幕监控
-│   └── login.py          # 登录管理
-├── queue_manager/         # 排队管理核心
-│   └── manager.py        # 队列管理器
-├── models/               # 数据模型
-├── utils/                # 工具函数
-├── config/               # 配置管理
-└── resource/             # 资源文件
-    └── icon/            # 程序图标
 ```
 
 ## ⚙️ 配置说明
@@ -246,6 +230,11 @@ MIT License
 - 新增 `vote/` 模块：`vote_models.py`、`vote_manager.py`、`vote_overlay.py`
 
 ---
+
+### v1.9 (2025-10-8)
+- 移除扶贫用工具。
+- 添加tts播报功能，现阶段支持使用：edge-tts，KokoroTTS，pyttsx3。
+- 添加加载界面，优化使用体验。
 
 ### v1.8 (2025-8-12)
 **修复：**

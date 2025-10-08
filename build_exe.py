@@ -17,7 +17,6 @@ from version_info import APP_NAME, APP_VERSION, APP_AUTHOR
 
 PROJECT_NAME = APP_NAME
 EXECUTABLE_NAME = APP_NAME  
-EXECUTABLE_NAME2 = f"{APP_NAME} - 排队工具2"  # 排队工具2的exe名称
 VERSION = APP_VERSION
 AUTHOR = APP_AUTHOR
 
@@ -27,7 +26,6 @@ PACKAGE_ROOT_DIR = CURRENT_DIR.parent / "打包"  # 打包输出根目录
 BUILD_DIR = PACKAGE_ROOT_DIR / "build"
 DIST_DIR = PACKAGE_ROOT_DIR / "dist"
 MAIN_SCRIPT = CURRENT_DIR / "main.py"
-MAIN2_SCRIPT = CURRENT_DIR / "main2.py"  # 排队工具2主文件
 ICON_PATH = CURRENT_DIR / "resource" / "icon" / "app_icon.ico"
 
 # 需要包含的数据文件
@@ -147,195 +145,9 @@ def check_dependencies():
 
 
 def create_spec_files():
-    """创建两个PyInstaller spec文件 - 主程序和排队工具2"""
+    """创建 PyInstaller spec 文件"""
     print("📝 创建 PyInstaller spec 文件...")
-    
-    # 检查第二个主文件是否存在
-    if not MAIN2_SCRIPT.exists():
-        print(f"❌ 排队工具2主脚本不存在: {MAIN2_SCRIPT}")
-        print("   将只生成主程序的spec文件")
-        return create_single_spec_file(MAIN_SCRIPT, EXECUTABLE_NAME)
-    
-    # 检查并构建存在的数据文件列表
-    valid_datas = []
-    for src, dst in DATA_FILES:
-        # 处理通配符路径
-        if '*' in src:
-            from glob import glob
-            matching_files = glob(src)
-            if matching_files:
-                valid_datas.append(f"('{src}', '{dst}')")
-                print(f"   ✅ 找到数据文件: {src} ({len(matching_files)} 个文件)")
-            else:
-                print(f"   ⚠️ 跳过数据文件: {src} (未找到匹配文件)")
-        else:
-            # 处理单个文件
-            src_path = CURRENT_DIR / src
-            if src_path.exists():
-                valid_datas.append(f"('{src}', '{dst}')")
-                print(f"   ✅ 找到数据文件: {src}")
-            else:
-                print(f"   ⚠️ 跳过数据文件: {src} (文件不存在)")
-    
-    datas_str = "[" + ",\n             ".join(valid_datas) + "]"
-    
-    # 构建隐式导入列表
-    hiddenimports_str = "[" + ",\n                    ".join([f"'{pkg}'" for pkg in HIDDEN_IMPORTS]) + "]"
-    
-    # 构建排除列表
-    excludes_str = "[" + ",\n             ".join([f"'{pkg}'" for pkg in EXCLUDES]) + "]"
-    
-    # 生成主程序spec文件
-    spec_content1 = f'''# -*- mode: python ; coding: utf-8 -*-
-# {PROJECT_NAME} v{VERSION} - PyInstaller配置文件 (主程序)
-# 生成时间: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-from PyInstaller.utils.hooks import collect_all, collect_submodules
-import datetime
-
-# 收集所有bilibili_api模块
-try:
-    bilibili_datas, bilibili_binaries, bilibili_hiddenimports = collect_all('bilibili_api')
-except:
-    bilibili_datas, bilibili_binaries, bilibili_hiddenimports = [], [], []
-
-# 收集PyQt6模块
-try:
-    pyqt6_datas, pyqt6_binaries, pyqt6_hiddenimports = collect_all('PyQt6')
-except:
-    pyqt6_datas, pyqt6_binaries, pyqt6_hiddenimports = [], [], []
-
-a = Analysis(
-    ['{MAIN_SCRIPT.name}'],
-    pathex=[r'{CURRENT_DIR}'],
-    binaries=bilibili_binaries + pyqt6_binaries,
-    datas={datas_str} + bilibili_datas + pyqt6_datas,
-    hiddenimports={hiddenimports_str} + bilibili_hiddenimports + pyqt6_hiddenimports,
-    hookspath=[],
-    hooksconfig={{}},
-    runtime_hooks=[],
-    excludes={excludes_str},
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=None,
-    noarchive=False,
-)
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=None)
-
-exe = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name=r'{EXECUTABLE_NAME}',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,  # 设置为False隐藏控制台窗口
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=r'{ICON_PATH}',
-    version_file=None,
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name=r'{EXECUTABLE_NAME}',
-)
-'''
-    
-    # 生成排队工具2 spec文件
-    spec_content2 = f'''# -*- mode: python ; coding: utf-8 -*-
-# {PROJECT_NAME} v{VERSION} - PyInstaller配置文件 (排队工具2)
-# 生成时间: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-from PyInstaller.utils.hooks import collect_all, collect_submodules
-import datetime
-
-# 收集所有bilibili_api模块
-try:
-    bilibili_datas, bilibili_binaries, bilibili_hiddenimports = collect_all('bilibili_api')
-except:
-    bilibili_datas, bilibili_binaries, bilibili_hiddenimports = [], [], []
-
-# 收集PyQt6模块
-try:
-    pyqt6_datas, pyqt6_binaries, pyqt6_hiddenimports = collect_all('PyQt6')
-except:
-    pyqt6_datas, pyqt6_binaries, pyqt6_hiddenimports = [], [], []
-
-a2 = Analysis(
-    ['{MAIN2_SCRIPT.name}'],
-    pathex=[r'{CURRENT_DIR}'],
-    binaries=bilibili_binaries + pyqt6_binaries,
-    datas={datas_str} + bilibili_datas + pyqt6_datas,
-    hiddenimports={hiddenimports_str} + bilibili_hiddenimports + pyqt6_hiddenimports,
-    hookspath=[],
-    hooksconfig={{}},
-    runtime_hooks=[],
-    excludes={excludes_str},
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=None,
-    noarchive=False,
-)
-
-pyz2 = PYZ(a2.pure, a2.zipped_data, cipher=None)
-
-exe2 = EXE(
-    pyz2,
-    a2.scripts,
-    [],
-    exclude_binaries=True,
-    name=r'{EXECUTABLE_NAME2}',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=False,  # 设置为False隐藏控制台窗口
-    disable_windowed_traceback=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=r'{ICON_PATH}',
-    version_file=None,
-)
-
-coll2 = COLLECT(
-    exe2,
-    a2.binaries,
-    a2.zipfiles,
-    a2.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name=r'{EXECUTABLE_NAME2}',
-)
-'''
-    
-    # 写入spec文件
-    spec_file1 = CURRENT_DIR / f"{EXECUTABLE_NAME}.spec"
-    spec_file2 = CURRENT_DIR / f"{EXECUTABLE_NAME2}.spec"
-    
-    with open(spec_file1, 'w', encoding='utf-8') as f:
-        f.write(spec_content1)
-    print(f"   ✅ 主程序spec文件: {spec_file1}")
-    
-    with open(spec_file2, 'w', encoding='utf-8') as f:
-        f.write(spec_content2)
-    print(f"   ✅ 排队工具2 spec文件: {spec_file2}")
-    
-    return [spec_file1, spec_file2]
+    return create_single_spec_file(MAIN_SCRIPT, EXECUTABLE_NAME)
 
 
 def create_single_spec_file(main_script, executable_name):
@@ -583,45 +395,33 @@ pause
 
 def print_summary():
     """打印打包总结"""
-    output_dir1 = DIST_DIR / EXECUTABLE_NAME
-    output_dir2 = DIST_DIR / EXECUTABLE_NAME2
-    
+    output_dir = DIST_DIR / EXECUTABLE_NAME
+
     print("\n" + "="*60)
     print(f"🎉 {PROJECT_NAME} v{VERSION} 打包完成!")
     print("="*60)
     print(f"📁 输出目录: {DIST_DIR}")
-    print(f"🚀 主程序: {output_dir1 / f'{EXECUTABLE_NAME}.exe'}")
-    print(f"🎯 排队工具2: {output_dir2 / f'{EXECUTABLE_NAME2}.exe'}")
+    print(f"🚀 主程序: {output_dir / f'{EXECUTABLE_NAME}.exe'}")
     print("\n📋 打包信息:")
     print(f"   - 打包模式: 目录模式 (便于调试和部署)")
     print(f"   - 控制台: 隐藏 (无黑窗口)")
     print(f"   - 图标: {ICON_PATH.name}")
     print(f"   - Python版本: {sys.version}")
-    
-    # 显示总目录大小
+
+    # 显示目录大小
     try:
-        total_size1 = sum(f.stat().st_size for f in output_dir1.rglob('*') if f.is_file()) if output_dir1.exists() else 0
-        total_size2 = sum(f.stat().st_size for f in output_dir2.rglob('*') if f.is_file()) if output_dir2.exists() else 0
-        size1_mb = total_size1 / (1024 * 1024)
-        size2_mb = total_size2 / (1024 * 1024)
-        total_mb = size1_mb + size2_mb
-        print(f"   - 主程序大小: {size1_mb:.1f} MB")
-        print(f"   - 排队工具2大小: {size2_mb:.1f} MB")
-        print(f"   - 总大小: {total_mb:.1f} MB")
-    except:
+        total_size = sum(
+            f.stat().st_size for f in output_dir.rglob('*') if f.is_file()
+        ) if output_dir.exists() else 0
+        size_mb = total_size / (1024 * 1024)
+        print(f"   - 目录大小: {size_mb:.1f} MB")
+    except Exception:
         pass
-    
+
     print("\n📝 使用说明:")
-    print(f"   主程序:")
-    print(f"     - 进入目录: {output_dir1}")
-    print(f"     - 运行程序: {EXECUTABLE_NAME}.exe")
-    print(f"   排队工具2:")
-    print(f"     - 进入目录: {output_dir2}")
-    print(f"     - 运行程序: {EXECUTABLE_NAME2}.exe")
-    print("\n✨ 现在可以将这两个目录分别复制到其他电脑使用!")
-    print("\n🔍 两个版本的区别:")
-    print(f"   - 主程序: 完整功能版本")
-    print(f"   - 排队工具2: 简化版本，专注排队和插队功能，支持独立插队名单")
+    print(f"   - 进入目录: {output_dir}")
+    print(f"   - 运行程序: {EXECUTABLE_NAME}.exe")
+    print("\n✨ 现在可以将此目录复制到其他电脑使用!")
 
 
 def main():
